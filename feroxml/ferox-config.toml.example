@@ -1,0 +1,40 @@
+# Example feroxml configuration (TOML). Pass with `--config ferox-config.toml`.
+# CLI flags override anything set here; anything omitted uses the built-in default.
+
+# --- engine selection ---
+classifier = "nearest_centroid"   # nearest_centroid | kmeans
+predictor  = "ppm"                 # ppm (variable-order) | markov1
+scheduler  = "thompson"            # thompson | ucb1 | round_robin
+ranker     = "bm25"                # bm25 | none
+use_soft404_filter = true
+
+# --- prediction ---
+top_n = 12
+probability_threshold = 0.02
+laplace_alpha = 0.5
+markov_max_order = 3
+
+# --- feedback-loop budget ---
+max_rounds = 25
+max_depth = 4
+request_budget = 20000
+
+# --- feroxbuster process controls ---
+ferox_binary = "feroxbuster"
+threads = 20
+rate_limit = 0                     # 0 = unlimited
+success_codes = [200, 204, 301, 302, 307, 401, 403, 405]
+extensions = []
+tls_verify = true
+scan_time_limit = ""               # e.g. "10m"
+ferox_extract_links = false        # keep discoveries attributable to the ML engine
+
+# --- hybrid coverage (optional) ---
+seed_wordlist = ""                 # base wordlist path; empty = pure prediction
+seed_per_round = 0                 # base-list entries added per expansion
+
+# --- determinism / scope / persistence ---
+seed = 1337
+scope = []                         # extra in-scope hosts/domains
+state_dir = ".feroxml"
+model_path = ""                    # learned model to load/save; empty = none

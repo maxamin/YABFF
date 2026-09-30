@@ -1,0 +1,15 @@
+# Rust build artifacts
+feroxml/target/
+**/target/
+
+# feroxml runtime state (learned models, temp wordlists, scan outputs)
+feroxml/.feroxml/
+.feroxml/
+
+# cloned third-party fuzzer source (reference only; each has its own upstream repo)
+tools/
+
+# scratch / editor
+*.swp
+*.tmp
+.DS_Store

@@ -1,0 +1,276 @@
+<title>Feature Correlation Heatmap</title>
+<style>
+  /* Layout: single column; sticky control header; horizontally-scrollable square matrix; notes below.
+     Color: warm off-white neutrals with an ink foreground; diverging blue↔red scale (validated poles)
+     carries correlation sign, gray = zero. Type: Space Grotesk for headings/labels, Georgia body,
+     ui-monospace for the numeric data. */
+  :root {
+    --bg: #f7f6f2;
+    --surface: #fcfcfb;
+    --panel: #efeee9;
+    --ink: #23231f;
+    --muted: #6b6a63;
+    --hairline: #dcdbd4;
+    --accent: #2a78d6;
+    /* diverging anchors (light) */
+    --pos: #2a78d6;   /* positive correlation → blue */
+    --neg: #e34948;   /* negative correlation → red  */
+    --mid: #f0efec;   /* zero → neutral gray         */
+    --cell-stroke: rgba(0,0,0,.05);
+    --grid-line: 34;
+    --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+    --font-body: Georgia, "Times New Roman", serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161614; --surface: #1a1a19; --panel: #232320; --ink: #e9e8e2;
+      --muted: #9c9b92; --hairline: #34342f; --accent: #3987e5;
+      --pos: #3987e5; --neg: #e66767; --mid: #383835; --cell-stroke: rgba(255,255,255,.06);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161614; --surface: #1a1a19; --panel: #232320; --ink: #e9e8e2;
+    --muted: #9c9b92; --hairline: #34342f; --accent: #3987e5;
+    --pos: #3987e5; --neg: #e66767; --mid: #383835; --cell-stroke: rgba(255,255,255,.06);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: var(--font-body);
+    line-height: 1.55; margin: 0;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-inline: 16px; padding-block: 28px 56px; }
+
+  header.page { margin-bottom: 22px; }
+  .eyebrow {
+    font-family: var(--font-display); font-size: 12px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 6px;
+  }
+  h1 {
+    font-family: var(--font-display); font-weight: 600; font-size: clamp(26px, 5vw, 40px);
+    line-height: 1.05; margin: 0 0 10px; text-wrap: balance; letter-spacing: -.01em;
+  }
+  .sub { color: var(--muted); max-width: 65ch; margin: 0; font-size: 15px; }
+
+  /* controls */
+  .controls {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 14px 20px;
+    margin: 22px 0 16px; padding: 14px 16px;
+    background: var(--panel); border: 1px solid var(--hairline); border-radius: 10px;
+  }
+  .legend { display: flex; align-items: center; gap: 10px; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+  .legend .bar {
+    width: 200px; max-width: 46vw; height: 12px; border-radius: 3px;
+    background: linear-gradient(90deg, var(--neg), var(--mid) 50%, var(--pos));
+    border: 1px solid var(--cell-stroke);
+  }
+  .legend .ends { display: flex; justify-content: space-between; width: 200px; max-width: 46vw; }
+  .legwrap { display: flex; flex-direction: column; gap: 4px; }
+  .ctl { display: flex; align-items: center; gap: 8px; font-family: var(--font-display); font-size: 13px; }
+  .ctl input { accent-color: var(--accent); width: 16px; height: 16px; }
+  button.toggle {
+    font-family: var(--font-display); font-size: 13px; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--hairline); border-radius: 7px;
+    padding: 6px 12px; cursor: pointer;
+  }
+  button.toggle:focus-visible, .ctl input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* matrix */
+  .matrix-scroll { overflow-x: auto; border: 1px solid var(--hairline); border-radius: 10px; background: var(--surface); }
+  .matrix { position: relative; padding: 8px; min-width: min-content; }
+  table.heat { border-collapse: collapse; font-family: var(--font-mono); }
+  table.heat th.col {
+    height: 96px; vertical-align: bottom; padding: 0 0 6px; font-weight: 500; font-size: 11px;
+  }
+  table.heat th.col > span {
+    display: inline-block; writing-mode: vertical-rl; transform: rotate(180deg);
+    white-space: nowrap; color: var(--muted); line-height: 1;
+  }
+  table.heat th.corner { width: 118px; }
+  table.heat th.row {
+    text-align: right; padding-right: 8px; font-weight: 500; font-size: 11px;
+    color: var(--muted); white-space: nowrap; max-width: 118px;
+  }
+  table.heat td.cell {
+    width: 20px; height: 20px; padding: 0; border: 1px solid var(--surface);
+    cursor: default; position: relative;
+  }
+  td.cell.dim { opacity: .16; }
+  td.cell.diag { outline: 1px solid var(--cell-stroke); outline-offset: -2px; }
+  /* crosshair highlight */
+  th.row.hl, th.col.hl > span { color: var(--ink); font-weight: 700; }
+  td.cell.rowhl, td.cell.colhl { box-shadow: inset 0 0 0 1px var(--ink); }
+
+  /* tooltip */
+  .tip {
+    position: fixed; z-index: 50; pointer-events: none; opacity: 0; transition: opacity .08s;
+    background: var(--ink); color: var(--bg); border-radius: 8px; padding: 9px 11px;
+    font-family: var(--font-display); font-size: 12.5px; line-height: 1.45; max-width: 260px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.28);
+  }
+  .tip.show { opacity: 1; }
+  .tip .r { font-family: var(--font-mono); font-size: 15px; font-weight: 700; }
+  .tip .pair { margin: 2px 0 5px; font-weight: 600; }
+  .tip .meta { color: color-mix(in srgb, var(--bg) 70%, var(--ink)); font-size: 11.5px; }
+  .tip .flag { display: inline-block; margin-top: 5px; padding: 1px 6px; border-radius: 4px; font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; }
+  .tip .flag.ok { background: #0ca30c; color: #fff; }
+  .tip .flag.weak { background: #fab219; color: #23231f; }
+
+  /* notes */
+  .notes { margin-top: 34px; display: grid; gap: 18px; grid-template-columns: 1fr; }
+  @media (min-width: 720px) { .notes { grid-template-columns: 1fr 1fr; } }
+  .note {
+    background: var(--surface); border: 1px solid var(--hairline); border-radius: 10px;
+    padding: 16px 18px; min-width: 0;
+  }
+  .note h2 { font-family: var(--font-display); font-size: 15px; margin: 0 0 8px; font-weight: 600; }
+  .note ul { margin: 0; padding-left: 18px; }
+  .note li { margin: 5px 0; font-size: 14px; }
+  .note li b { font-family: var(--font-mono); font-weight: 700; }
+  .caveat { border-left: 3px solid var(--neg); }
+  .foot { margin-top: 26px; color: var(--muted); font-size: 12.5px; font-family: var(--font-display); }
+  code { font-family: var(--font-mono); font-size: .92em; background: var(--panel); padding: 1px 5px; border-radius: 4px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="page">
+    <p class="eyebrow">Web fuzzers · 9 projects · 34 features</p>
+    <h1>Feature Correlation Heatmap</h1>
+    <p class="sub">Pairwise Pearson correlation of feature support across nine content-discovery / fuzzing tools. Blue = features that appear together; red = features that appear instead of one another. Hover any cell for the exact value and how many of the 9 tools share both features.</p>
+  </header>
+
+  <div class="controls">
+    <div class="legwrap">
+      <div class="legend"><span>−1</span><span class="bar" role="img" aria-label="diverging color scale from −1 red through 0 gray to +1 blue"></span><span>+1</span></div>
+      <div class="legend" style="justify-content:space-between"><span class="ends"><span>anti-correlated</span><span>0</span><span>together</span></span></div>
+    </div>
+    <label class="ctl"><input type="checkbox" id="reliable"> Dim low-evidence pairs <span style="color:var(--muted)">(a feature in &lt;4 tools)</span></label>
+    <button class="toggle" id="theme" type="button" aria-label="Toggle dark and light theme">◐ Theme</button>
+  </div>
+
+  <div class="matrix-scroll">
+    <div class="matrix">
+      <table class="heat" id="heat" aria-label="Feature correlation matrix"></table>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div class="note">
+      <h2>Strongest real associations</h2>
+      <ul>
+        <li><b>+0.94</b> size filters ↔ regex filters — response filters ship as a set</li>
+        <li><b>+0.90</b> body fuzzing ↔ header fuzzing — the general-purpose fuzzer signature</li>
+        <li><b>+0.87</b> recursion ↔ depth control</li>
+        <li><b>−0.93</b> recursion ↔ DNS mode — HTTP scanners vs. host enumerators split cleanly</li>
+        <li><b>−0.64</b> header fuzzing ↔ crawling — two opposing design philosophies</li>
+      </ul>
+    </div>
+    <div class="note caveat">
+      <h2>Why some cells lie</h2>
+      <ul>
+        <li>Only <b>9</b> tools, so this is descriptive, not inferential — no p-values would be meaningful.</li>
+        <li>A cell can read <b>±1.00</b> while only one tool has the feature (e.g. feroxbuster's auto-collection bundle). Those are artifacts of small n, not real links.</li>
+        <li>Turn on <b>Dim low-evidence pairs</b> to fade every cell where a feature appears in fewer than 4 tools — what stays lit is the trustworthy part.</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="foot">Data from a source read of each tool. Diverging scale: validated blue/red poles, gray midpoint. Companion files: feature-project-matrix, feature-correlation-matrix.csv, benchmark.</p>
+</div>
+
+<div class="tip" id="tip" role="tooltip" aria-hidden="true"></div>
+
+<script>
+const DATA = {"features":["Recurse","Depth","DNS","Vhost","API","FUZZ-pos","Body","Header","Multi-WL","Encoders","Methods","Crawl","robots","DirList","Wildcard","F:Status","F:Size","F:Regex","F:Similar","Rate-lim","Auto-tune","Proxy","Replay","SOCKS","mTLS","Rand-UA","Resume","Interact","JSON-out","Ext-col","Bak-col","Word-col","Multi-proto","GUI"],"presence":[7,7,2,5,1,5,7,5,5,2,8,4,2,1,9,9,7,6,3,9,1,9,2,7,5,4,3,5,7,1,1,1,1,1],"corr":[[1.0,0.869,-0.929,-0.238,-0.189,-0.425,-0.321,-0.425,0.068,-0.286,-0.043,0.567,0.334,0.236,0.094,-0.357,-0.055,0.016,0.434,-0.472,0.236,0.614,0.357,-0.055,0.373,0.382,0.125,0.373,0.436,0.236,0.236,0.236,-0.614,0.236],[0.869,1.0,-0.832,0.036,-0.1,-0.15,0.1,-0.15,0.359,-0.151,0.39,0.532,0.495,0.35,0.2,0.151,0.404,0.394,0.642,-0.1,0.35,0.55,0.529,0.404,0.683,0.635,0.321,0.359,0.751,0.35,0.35,0.35,-0.55,-0.1],[-0.929,-0.832,1.0,0.373,-0.189,0.567,0.189,0.283,0.068,0.357,-0.043,-0.454,-0.267,-0.189,-0.189,0.286,0.109,0.162,-0.347,0.378,-0.189,-0.661,-0.286,0.109,-0.238,-0.436,-0.036,-0.238,-0.546,-0.189,-0.189,-0.189,0.661,-0.189],[-0.238,0.036,0.373,1.0,-0.359,0.808,0.521,0.539,0.565,0.373,0.288,-0.308,0.254,0.045,-0.09,0.543,0.518,0.585,0.082,0.18,0.045,-0.045,0.373,0.674,0.274,-0.207,-0.221,-0.016,0.052,0.045,0.045,0.045,0.045,-0.359],[-0.189,-0.1,-0.189,-0.359,1.0,-0.375,0.35,0.375,-0.359,-0.189,0.229,-0.3,-0.177,-0.125,0.25,0.189,-0.144,-0.472,-0.229,0.25,-0.125,0.125,-0.189,-0.144,-0.359,0.144,-0.236,-0.359,0.289,-0.125,-0.125,-0.125,-0.125,-0.125],[-0.425,-0.15,0.567,0.808,-0.375,1.0,0.6,0.625,0.674,0.567,0.344,-0.386,-0.177,-0.375,-0.25,0.567,0.577,0.643,-0.172,0.25,-0.375,-0.375,0.0,0.577,0.269,-0.289,-0.142,-0.135,0.0,-0.375,-0.375,-0.375,0.375,-0.375],[-0.321,0.1,0.189,0.521,0.35,0.6,1.0,0.9,0.683,0.529,0.803,-0.394,0.071,-0.1,-0.1,0.832,0.751,0.549,0.023,0.5,-0.1,-0.35,0.189,0.577,0.359,0.115,-0.019,-0.126,0.577,-0.1,-0.1,-0.1,0.35,-0.55],[-0.425,-0.15,0.283,0.539,0.375,0.625,0.9,1.0,0.539,0.567,0.516,-0.643,-0.177,-0.375,-0.25,0.567,0.433,0.257,-0.344,0.25,-0.375,-0.375,0.0,0.289,0.0,-0.289,-0.425,-0.269,0.289,-0.375,-0.375,-0.375,0.375,-0.375],[0.068,0.359,0.068,0.565,-0.359,0.674,0.683,0.539,1.0,0.679,0.659,-0.031,0.254,0.045,-0.359,0.543,0.83,0.862,0.268,0.18,0.045,-0.449,0.373,0.518,0.71,0.104,0.238,0.274,0.518,0.045,0.045,0.045,0.449,-0.359],[-0.286,-0.151,0.357,0.373,-0.189,0.567,0.529,0.567,0.679,1.0,0.347,-0.162,0.134,-0.189,-0.756,0.286,0.436,0.454,-0.347,-0.189,-0.189,-0.661,-0.286,0.109,0.068,-0.109,-0.036,-0.238,0.109,-0.189,-0.189,-0.189,0.661,-0.189],[-0.043,0.39,-0.043,0.288,0.229,0.344,0.803,0.516,0.659,0.347,1.0,0.197,0.324,0.229,0.229,0.824,0.861,0.689,0.421,0.574,0.229,-0.229,0.347,0.662,0.659,0.53,0.434,0.288,0.861,0.229,0.229,0.229,0.229,-0.287],[0.567,0.532,-0.454,-0.308,-0.3,-0.386,-0.394,-0.643,-0.031,-0.162,0.197,1.0,0.485,0.472,0.343,-0.13,0.099,0.191,0.511,-0.171,0.472,0.3,0.13,0.099,0.385,0.644,0.6,0.524,0.396,0.472,0.472,0.472,-0.3,0.472],[0.334,0.495,-0.267,0.254,-0.177,-0.177,0.071,-0.177,0.254,0.134,0.324,0.485,1.0,0.884,0.0,0.267,0.408,0.424,0.649,0.0,0.884,0.177,0.535,0.408,0.445,0.612,0.468,0.254,0.408,0.884,0.884,0.884,-0.177,-0.177],[0.236,0.35,-0.189,0.045,-0.125,-0.375,-0.1,-0.375,0.045,-0.189,0.229,0.472,0.884,1.0,0.25,0.189,0.289,0.3,0.803,0.25,1.0,0.125,0.661,0.289,0.449,0.577,0.614,0.449,0.289,1.0,1.0,1.0,-0.125,-0.125],[0.094,0.2,-0.189,-0.09,0.25,-0.25,-0.1,-0.25,-0.359,-0.756,0.229,0.343,0.0,0.25,1.0,0.189,0.0,-0.086,0.459,0.5,0.25,0.5,0.378,0.289,0.18,0.289,0.189,0.449,0.289,0.25,0.25,0.25,-0.5,0.25],[-0.357,0.151,0.286,0.543,0.189,0.567,0.832,0.567,0.543,0.286,0.824,-0.13,0.267,0.189,0.189,1.0,0.873,0.713,0.347,0.756,0.189,-0.189,0.286,0.873,0.543,0.436,0.357,-0.068,0.546,0.189,0.189,0.189,0.189,-0.661],[-0.055,0.404,0.109,0.518,-0.144,0.577,0.751,0.433,0.83,0.436,0.861,0.099,0.408,0.289,0.0,0.873,1.0,0.941,0.53,0.577,0.289,-0.289,0.436,0.833,0.83,0.5,0.546,0.207,0.667,0.289,0.289,0.289,0.289,-0.577],[0.016,0.394,0.162,0.585,-0.472,0.643,0.549,0.257,0.862,0.454,0.689,0.191,0.424,0.3,-0.086,0.713,0.941,1.0,0.551,0.429,0.3,-0.3,0.454,0.792,0.862,0.396,0.567,0.308,0.495,0.3,0.3,0.3,0.3,-0.472],[0.434,0.642,-0.347,0.082,-0.229,-0.172,0.023,-0.344,0.268,-0.347,0.421,0.511,0.649,0.803,0.459,0.347,0.53,0.551,1.0,0.459,0.803,0.229,0.824,0.53,0.824,0.662,0.737,0.639,0.53,0.803,0.803,0.803,-0.229,-0.229],[-0.472,-0.1,0.378,0.18,0.25,0.25,0.5,0.25,0.18,-0.189,0.574,-0.171,0.0,0.25,0.5,0.756,0.577,0.429,0.459,1.0,0.25,-0.25,0.378,0.577,0.449,0.289,0.472,0.18,0.289,0.25,0.25,0.25,0.25,-0.5],[0.236,0.35,-0.189,0.045,-0.125,-0.375,-0.1,-0.375,0.045,-0.189,0.229,0.472,0.884,1.0,0.25,0.189,0.289,0.3,0.803,0.25,1.0,0.125,0.661,0.289,0.449,0.577,0.614,0.449,0.289,1.0,1.0,1.0,-0.125,-0.125],[0.614,0.55,-0.661,-0.045,0.125,-0.375,-0.35,-0.375,-0.449,-0.661,-0.229,0.3,0.177,0.125,0.5,-0.189,-0.289,-0.3,0.229,-0.25,0.125,1.0,0.189,0.144,-0.045,0.289,-0.189,-0.045,0.144,0.125,0.125,0.125,-1.0,0.125],[0.357,0.529,-0.286,0.373,-0.189,0.0,0.189,0.0,0.373,-0.286,0.347,0.13,0.535,0.661,0.378,0.286,0.436,0.454,0.824,0.378,0.661,0.189,1.0,0.436,0.679,0.218,0.286,0.679,0.436,0.661,0.661,0.661,-0.189,-0.189],[-0.055,0.404,0.109,0.674,-0.144,0.577,0.577,0.289,0.518,0.109,0.662,0.099,0.408,0.289,0.289,0.873,0.833,0.792,0.53,0.577,0.289,0.144,0.436,1.0,0.674,0.5,0.382,0.052,0.5,0.289,0.289,0.289,-0.144,-0.577],[0.373,0.683,-0.238,0.274,-0.359,0.269,0.359,0.0,0.71,0.068,0.659,0.385,0.445,0.449,0.18,0.543,0.83,0.862,0.824,0.449,0.449,-0.045,0.679,0.674,1.0,0.57,0.696,0.565,0.674,0.449,0.449,0.449,0.045,-0.359],[0.382,0.635,-0.436,-0.207,0.144,-0.289,0.115,-0.289,0.104,-0.109,0.53,0.644,0.612,0.577,0.289,0.436,0.5,0.396,0.662,0.289,0.577,0.289,0.218,0.5,0.57,1.0,0.764,0.104,0.667,0.577,0.577,0.577,-0.289,-0.289],[0.125,0.321,-0.036,-0.221,-0.236,-0.142,-0.019,-0.425,0.238,-0.036,0.434,0.6,0.468,0.614,0.189,0.357,0.546,0.567,0.737,0.472,0.614,-0.189,0.286,0.382,0.696,0.764,1.0,0.39,0.382,0.614,0.614,0.614,0.189,-0.236],[0.373,0.359,-0.238,-0.016,-0.359,-0.135,-0.126,-0.269,0.274,-0.238,0.288,0.524,0.254,0.449,0.449,-0.068,0.207,0.308,0.639,0.18,0.449,-0.045,0.679,0.052,0.565,0.104,0.39,1.0,0.363,0.449,0.449,0.449,0.045,0.449],[0.436,0.751,-0.546,0.052,0.289,0.0,0.577,0.289,0.518,0.109,0.861,0.396,0.408,0.289,0.289,0.546,0.667,0.495,0.53,0.289,0.289,0.144,0.436,0.5,0.674,0.667,0.382,0.363,1.0,0.289,0.289,0.289,-0.144,-0.144],[0.236,0.35,-0.189,0.045,-0.125,-0.375,-0.1,-0.375,0.045,-0.189,0.229,0.472,0.884,1.0,0.25,0.189,0.289,0.3,0.803,0.25,1.0,0.125,0.661,0.289,0.449,0.577,0.614,0.449,0.289,1.0,1.0,1.0,-0.125,-0.125],[0.236,0.35,-0.189,0.045,-0.125,-0.375,-0.1,-0.375,0.045,-0.189,0.229,0.472,0.884,1.0,0.25,0.189,0.289,0.3,0.803,0.25,1.0,0.125,0.661,0.289,0.449,0.577,0.614,0.449,0.289,1.0,1.0,1.0,-0.125,-0.125],[0.236,0.35,-0.189,0.045,-0.125,-0.375,-0.1,-0.375,0.045,-0.189,0.229,0.472,0.884,1.0,0.25,0.189,0.289,0.3,0.803,0.25,1.0,0.125,0.661,0.289,0.449,0.577,0.614,0.449,0.289,1.0,1.0,1.0,-0.125,-0.125],[-0.614,-0.55,0.661,0.045,-0.125,0.375,0.35,0.375,0.449,0.661,0.229,-0.3,-0.177,-0.125,-0.5,0.189,0.289,0.3,-0.229,0.25,-0.125,-1.0,-0.189,-0.144,0.045,-0.289,0.189,0.045,-0.144,-0.125,-0.125,-0.125,1.0,-0.125],[0.236,-0.1,-0.189,-0.359,-0.125,-0.375,-0.55,-0.375,-0.359,-0.189,-0.287,0.472,-0.177,-0.125,0.25,-0.661,-0.577,-0.472,-0.229,-0.5,-0.125,0.125,-0.189,-0.577,-0.359,-0.289,-0.236,0.449,-0.144,-0.125,-0.125,-0.125,-0.125,1.0]],"cooc":[[7,7,0,3,1,3,5,3,4,1,6,4,2,1,7,7,5,4,3,7,1,7,2,5,4,4,2,4,6,1,1,1,0,1],[7,7,0,3,1,3,5,3,4,1,6,4,2,1,7,7,5,4,3,7,1,7,2,5,4,4,2,4,6,1,1,1,0,1],[0,0,2,2,0,2,2,2,1,1,2,0,0,0,2,2,2,2,0,2,0,2,0,2,1,0,1,1,1,0,0,0,1,0],[3,3,2,5,0,4,5,4,4,2,5,2,2,1,5,5,5,5,2,5,1,5,2,5,4,2,2,3,4,1,1,1,1,0],[1,1,0,0,1,0,1,1,0,0,1,0,0,0,1,1,1,0,0,1,0,1,0,1,0,1,0,0,1,0,0,0,0,0],[3,3,2,4,0,5,5,4,4,2,5,2,1,0,5,5,5,5,2,5,0,5,1,5,4,2,2,3,4,0,0,0,1,0],[5,5,2,5,1,5,7,5,5,2,7,3,2,1,7,7,7,6,3,7,1,7,2,7,5,4,3,4,6,1,1,1,1,0],[3,3,2,4,1,4,5,5,3,2,5,1,1,0,5,5,5,4,1,5,0,5,1,5,3,2,1,2,4,0,0,0,1,0],[4,4,1,4,0,4,5,3,5,2,5,3,2,1,5,5,5,5,3,5,1,5,2,5,5,3,3,4,5,1,1,1,1,0],[1,1,1,2,0,2,2,2,2,2,2,1,1,0,2,2,2,2,0,2,0,2,0,2,2,1,1,1,2,0,0,0,1,0],[6,6,2,5,1,5,7,5,5,2,8,4,2,1,8,8,7,6,3,8,1,8,2,7,5,4,3,5,7,1,1,1,1,1],[4,4,0,2,0,2,3,1,3,1,4,4,2,1,4,4,3,3,2,4,1,4,1,3,3,3,2,3,4,1,1,1,0,1],[2,2,0,2,0,1,2,1,2,1,2,2,2,1,2,2,2,2,1,2,1,2,1,2,2,2,1,1,2,1,1,1,0,0],[1,1,0,1,0,0,1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0],[7,7,2,5,1,5,7,5,5,2,8,4,2,1,9,9,7,6,3,9,1,9,2,7,5,4,3,5,7,1,1,1,1,1],[7,7,2,5,1,5,7,5,5,2,8,4,2,1,9,9,7,6,3,9,1,9,2,7,5,4,3,5,7,1,1,1,1,1],[5,5,2,5,1,5,7,5,5,2,7,3,2,1,7,7,7,6,3,7,1,7,2,7,5,4,3,4,6,1,1,1,1,0],[4,4,2,5,0,5,6,4,5,2,6,3,2,1,6,6,6,6,3,6,1,6,2,6,5,3,3,4,5,1,1,1,1,0],[3,3,0,2,0,2,3,1,3,0,3,2,1,1,3,3,3,3,3,3,1,3,2,3,3,2,2,3,3,1,1,1,0,0],[7,7,2,5,1,5,7,5,5,2,8,4,2,1,9,9,7,6,3,9,1,9,2,7,5,4,3,5,7,1,1,1,1,1],[1,1,0,1,0,0,1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0],[7,7,2,5,1,5,7,5,5,2,8,4,2,1,9,9,7,6,3,9,1,9,2,7,5,4,3,5,7,1,1,1,1,1],[2,2,0,2,0,1,2,1,2,0,2,1,1,1,2,2,2,2,2,2,1,2,2,2,2,1,1,2,2,1,1,1,0,0],[5,5,2,5,1,5,7,5,5,2,7,3,2,1,7,7,7,6,3,7,1,7,2,7,5,4,3,4,6,1,1,1,1,0],[4,4,1,4,0,4,5,3,5,2,5,3,2,1,5,5,5,5,3,5,1,5,2,5,5,3,3,4,5,1,1,1,1,0],[4,4,0,2,1,2,4,2,3,1,4,3,2,1,4,4,4,3,2,4,1,4,1,4,3,4,2,2,4,1,1,1,0,0],[2,2,1,2,0,2,3,1,3,1,3,2,1,1,3,3,3,3,2,3,1,3,1,3,3,2,3,3,3,1,1,1,1,0],[4,4,1,3,0,3,4,2,4,1,5,3,1,1,5,5,4,4,3,5,1,5,2,4,4,2,3,5,5,1,1,1,1,1],[6,6,1,4,1,4,6,4,5,2,7,4,2,1,7,7,6,5,3,7,1,7,2,6,5,4,3,5,7,1,1,1,1,1],[1,1,0,1,0,0,1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0],[1,1,0,1,0,0,1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0],[1,1,0,1,0,0,1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0],[0,0,1,1,0,1,1,1,1,1,1,0,0,0,1,1,1,1,0,1,0,1,0,1,1,0,1,1,1,0,0,0,1,0],[1,1,0,0,0,0,0,0,0,0,1,1,0,0,1,1,0,0,0,1,0,1,0,0,0,0,0,1,1,0,0,0,0,1]],"n":9,"projects":["ffuf","feroxbuster","wfuzz","dirsearch","gobuster","kiterunner","patator","dirbuster","dirb"],"full_desc":"Pearson correlation of feature support (yes=1, partial=0.5, no=0) across 9 fuzzer projects"};
+
+const heat = document.getElementById('heat');
+const tip = document.getElementById('tip');
+const F = DATA.features, C = DATA.corr, CO = DATA.cooc, PRES = DATA.presence, N = DATA.n;
+const RELIABLE_MIN = 4;
+
+function themeAnchors() {
+  const cs = getComputedStyle(document.documentElement);
+  const hex = n => cs.getPropertyValue(n).trim();
+  return { pos: parseHex(hex('--pos')), neg: parseHex(hex('--neg')), mid: parseHex(hex('--mid')) };
+}
+function parseHex(h){ h=h.replace('#',''); return [0,2,4].map(i=>parseInt(h.slice(i,i+2),16)); }
+function toHex(a){ return '#'+a.map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,'0')).join(''); }
+function lerp(a,b,t){ return a.map((v,i)=>v+(b[i]-v)*t); }
+function colorFor(r, A){
+  const t = Math.min(1, Math.abs(r));
+  const pole = r >= 0 ? A.pos : A.neg;
+  return toHex(lerp(A.mid, pole, t));
+}
+
+function build(){
+  const A = themeAnchors();
+  const dim = document.getElementById('reliable').checked;
+  let html = '<thead><tr><th class="corner"></th>';
+  F.forEach((f,j)=> html += `<th class="col" data-j="${j}"><span>${f}</span></th>`);
+  html += '</tr></thead><tbody>';
+  for(let i=0;i<F.length;i++){
+    html += `<tr><th class="row" data-i="${i}">${F[i]}</th>`;
+    for(let j=0;j<F.length;j++){
+      const r = C[i][j];
+      const weak = Math.min(PRES[i],PRES[j]) < RELIABLE_MIN && i!==j;
+      const cls = 'cell' + (i===j?' diag':'') + (dim && weak ? ' dim':'');
+      html += `<td class="${cls}" data-i="${i}" data-j="${j}" style="background:${colorFor(r,A)}"></td>`;
+    }
+    html += '</tr>';
+  }
+  heat.innerHTML = html + '</tbody>';
+}
+build();
+
+// hover: crosshair + tooltip
+heat.addEventListener('mouseover', e=>{
+  const td = e.target.closest('td.cell'); if(!td) return;
+  const i=+td.dataset.i, j=+td.dataset.j;
+  heat.querySelectorAll('.rowhl,.colhl,.hl').forEach(el=>el.classList.remove('rowhl','colhl','hl'));
+  heat.querySelectorAll(`td[data-i="${i}"]`).forEach(el=>el.classList.add('rowhl'));
+  heat.querySelectorAll(`td[data-j="${j}"]`).forEach(el=>el.classList.add('colhl'));
+  heat.querySelector(`th.row[data-i="${i}"]`)?.classList.add('hl');
+  heat.querySelector(`th.col[data-j="${j}"]`)?.classList.add('hl');
+  const r=C[i][j], co=CO[i][j];
+  const weak = Math.min(PRES[i],PRES[j]) < RELIABLE_MIN;
+  const self = i===j;
+  tip.innerHTML = self
+    ? `<div class="r">${F[i]}</div><div class="meta">present in ${PRES[i]} of ${N} tools</div>`
+    : `<div class="r">${r>=0?'+':''}${r.toFixed(3)}</div>`
+      + `<div class="pair">${F[i]} × ${F[j]}</div>`
+      + `<div class="meta">both present in ${co} of ${N} tools</div>`
+      + `<span class="flag ${weak?'weak':'ok'}">${weak?'low evidence':'reliable'}</span>`;
+  tip.classList.add('show'); tip.setAttribute('aria-hidden','false');
+});
+heat.addEventListener('mousemove', e=>{
+  const pad=14; let x=e.clientX+pad, y=e.clientY+pad;
+  const w=tip.offsetWidth, h=tip.offsetHeight;
+  if(x+w>innerWidth) x=e.clientX-w-pad;
+  if(y+h>innerHeight) y=e.clientY-h-pad;
+  tip.style.left=x+'px'; tip.style.top=y+'px';
+});
+heat.addEventListener('mouseleave', ()=>{
+  tip.classList.remove('show'); tip.setAttribute('aria-hidden','true');
+  heat.querySelectorAll('.rowhl,.colhl,.hl').forEach(el=>el.classList.remove('rowhl','colhl','hl'));
+});
+
+document.getElementById('reliable').addEventListener('change', build);
+
+// theme toggle (cycles explicit light/dark; recolors cells)
+document.getElementById('theme').addEventListener('click', ()=>{
+  const root=document.documentElement;
+  const isDark = root.getAttribute('data-theme')==='dark'
+    || (!root.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+  root.setAttribute('data-theme', isDark?'light':'dark');
+  build();
+});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', ()=>{
+  if(!document.documentElement.getAttribute('data-theme')) build();
+});
+</script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap">
