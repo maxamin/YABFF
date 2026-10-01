@@ -778,25 +778,102 @@ async fn update_app(
     Ok(status)
 }
 
+/// In-process [`FeroxRunner`](ferox_ml_core::ferox::FeroxRunner): runs each bounded
+/// scan as direct concurrent HTTP GETs using feroxbuster's own configured reqwest
+/// client (same user-agent / headers / TLS / proxy), returning responses straight
+/// to the shared orchestrator — no subprocess, and none of feroxbuster's global
+/// scan state. It covers the `--ml-loop` scan path (flat bounded scans); it does
+/// not crawl links (the loop never requests `extract_links`).
+struct InProcessRunner {
+    client: reqwest::Client,
+    rt: tokio::runtime::Runtime,
+    concurrency: usize,
+    status_codes: Vec<u16>,
+}
+
+impl ferox_ml_core::ferox::FeroxRunner for InProcessRunner {
+    fn run(
+        &self,
+        args: &ferox_ml_core::ferox::FeroxArgs,
+    ) -> Result<Vec<ferox_ml_core::ferox::FeroxResponse>> {
+        use ferox_ml_core::ferox::FeroxResponse;
+        use futures::stream::StreamExt;
+
+        if args.words.is_empty() {
+            return Ok(vec![]);
+        }
+        let base = args.url.trim_end_matches('/').to_string();
+        let urls: Vec<String> = args
+            .words
+            .iter()
+            .map(|w| format!("{base}/{}", w.trim_start_matches('/')))
+            .collect();
+        let client = self.client.clone();
+        let conc = self.concurrency.max(1);
+
+        let responses: Vec<FeroxResponse> = self.rt.block_on(async move {
+            futures::stream::iter(urls)
+                .map(|u| {
+                    let client = client.clone();
+                    async move {
+                        let resp = client.get(&u).send().await.ok()?;
+                        let status = resp.status().as_u16();
+                        let mut headers = std::collections::HashMap::new();
+                        for (k, v) in resp.headers() {
+                            if let Ok(s) = v.to_str() {
+                                headers.insert(k.as_str().to_string(), s.to_string());
+                            }
+                        }
+                        let body = resp.text().await.unwrap_or_default();
+                        let path = url::Url::parse(&u)
+                            .map(|x| x.path().to_string())
+                            .unwrap_or_default();
+                        Some(FeroxResponse {
+                            url: u,
+                            path,
+                            status,
+                            content_length: body.len() as u64,
+                            word_count: body.split_whitespace().count() as u64,
+                            line_count: body.lines().count() as u64,
+                            headers,
+                        })
+                    }
+                })
+                .buffer_unordered(conc)
+                .filter_map(|x| async move { x })
+                .collect()
+                .await
+        });
+
+        // mimic feroxbuster's reported set: drop 404/connection errors, and (unless
+        // the probe asked for all codes) keep only the configured success codes.
+        let all = args.all_codes;
+        let codes = &self.status_codes;
+        Ok(responses
+            .into_iter()
+            .filter(|r| {
+                r.status != 0
+                    && r.status != 404
+                    && (all || codes.is_empty() || codes.contains(&r.status))
+            })
+            .collect())
+    }
+}
+
 /// Run the shared `ferox-ml-core` orchestrator (the adaptive, budgeted
-/// bounded-scan feedback loop) against the target, self-driving this binary for
-/// each bounded sub-scan. This is feroxml's loop hosted inside the feroxbuster
-/// binary via the same runner-agnostic `Campaign` both tools now share.
+/// bounded-scan feedback loop) against the target, in-process via
+/// [`InProcessRunner`] — the same runner-agnostic `Campaign` both tools share,
+/// now with no subprocess at all.
 fn run_ml_loop(config: &Configuration) -> Result<()> {
     use ferox_ml_core::config::Config as MlConfig;
-    use ferox_ml_core::ferox::RealRunner;
     use ferox_ml_core::orchestrator::Campaign;
 
     if config.target_url.is_empty() {
         anyhow::bail!("--ml-loop requires a target URL (-u/--url)");
     }
 
-    let self_bin = std::env::current_exe()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| "feroxbuster".to_string());
-
     let mut cfg = MlConfig {
-        ferox_binary: self_bin,
+        ferox_binary: "<in-process>".to_string(),
         threads: config.threads,
         rate_limit: config.rate_limit,
         tls_verify: !config.insecure,
@@ -813,14 +890,27 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
         cfg.seed_per_round = 10;
     }
 
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .with_context(|| "could not build runtime for --ml-loop")?;
+    let runner = InProcessRunner {
+        client: config.client.clone(),
+        rt,
+        concurrency: if config.rate_limit > 0 {
+            config.threads.min(config.rate_limit)
+        } else {
+            config.threads
+        },
+        status_codes: config.status_codes.clone(),
+    };
+
     log::info!(
-        "ml-loop: driving '{}' (scheduler={}, rounds<= {})",
-        cfg.ferox_binary,
+        "ml-loop: in-process runner (scheduler={}, rounds<= {})",
         cfg.scheduler,
         cfg.max_rounds
     );
 
-    let runner = RealRunner { cfg: cfg.clone() };
     let summary = Campaign::new(cfg, Box::new(runner)).run(&config.target_url)?;
 
     println!("=== feroxbuster --ml-loop summary ===");
