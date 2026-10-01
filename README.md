@@ -29,9 +29,11 @@ prediction (seeded per profile, learns online), **Thompson / UCB1** scheduling,
 The ML path is measured, not just asserted:
 [`docs/analysis/ml-ab-benchmark.md`](docs/analysis/ml-ab-benchmark.md) is a stock
 vs `--ml` A/B (reproducible with [`scripts/ab_benchmark.py`](scripts/ab_benchmark.py)),
-and [`docs/analysis/jsintel-lab-results.md`](docs/analysis/jsintel-lab-results.md)
+[`docs/analysis/jsintel-lab-results.md`](docs/analysis/jsintel-lab-results.md)
 records fingerprinting against a live multi-framework lab estate (Juice Shop,
-DVWA, WebGoat, WordPress, Django).
+DVWA, WebGoat, WordPress, Django), and
+[`docs/analysis/fingerprint-enhancements.md`](docs/analysis/fingerprint-enhancements.md)
+is a labelled evaluation (confusion matrix + a tested catch-all-guard enhancement).
 
 ## The study (docs)
 
