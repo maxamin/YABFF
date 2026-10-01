@@ -314,11 +314,11 @@ async fn wrapped_main(config: Arc<Configuration>) -> Result<()> {
         if config.ml && !config.target_url.is_empty() {
             let base = config.target_url.trim_end_matches('/').to_string();
 
-            // probe all discriminating paths concurrently (one round-trip instead
-            // of one-at-a-time); a failed probe becomes a status-0 ProbeResp so the
-            // confidence gate can tell "blind" from "classified".
-            let probe_futs = feroxbuster::ml::probe_paths().iter().map(|p| {
-                let url = format!("{base}/{p}");
+            // probe one path -> ProbeResp, reading the body so we can compute a
+            // soft-404 signature (content length / word / line counts). A failed
+            // request becomes a status-0 ProbeResp so the gate can tell "blind"
+            // from "classified".
+            let probe_one = |url: String| {
                 let client = config.client.clone();
                 async move {
                     match client.get(&url).send().await {
@@ -330,21 +330,39 @@ async fn wrapped_main(config: Arc<Configuration>) -> Result<()> {
                                     headers.insert(k.as_str().to_string(), val.to_string());
                                 }
                             }
+                            let body = resp.text().await.unwrap_or_default();
                             feroxbuster::ml::ProbeResp {
                                 url,
                                 status,
                                 headers,
+                                content_length: body.len() as u64,
+                                word_count: body.split_whitespace().count() as u64,
+                                line_count: body.lines().count() as u64,
                             }
                         }
                         Err(_) => feroxbuster::ml::ProbeResp {
                             url,
                             status: 0,
-                            headers: std::collections::HashMap::new(),
+                            ..Default::default()
                         },
                     }
                 }
-            });
-            let probes: Vec<_> = futures::future::join_all(probe_futs).await;
+            };
+
+            // discriminating probes + a few random, almost-certainly-absent paths
+            // (for E2 soft-404 scoring), all concurrent.
+            let disc_futs = feroxbuster::ml::probe_paths()
+                .iter()
+                .map(|p| probe_one(format!("{base}/{p}")));
+            let rand_futs = ["ml-probe-zx9q7w2k", "ml-probe-4f8d1a0e", "ml-probe-7c3e5b11"]
+                .iter()
+                .map(|p| probe_one(format!("{base}/{p}")));
+            let mut probes: Vec<_> = futures::future::join_all(disc_futs).await;
+            let randoms: Vec<_> = futures::future::join_all(rand_futs).await;
+
+            // E2: demote any discriminating probe that returns the server's soft-404
+            // body to "absent", so a catch-all's uniform 200s don't read as markers.
+            let demoted = feroxbuster::ml::score_soft_404(&mut probes, &randoms);
 
             let (profile, confident) =
                 feroxbuster::ml::fingerprint_gated(&probes, config.ml_fp_margin);
@@ -367,7 +385,8 @@ async fn wrapped_main(config: Arc<Configuration>) -> Result<()> {
             }
             log::info!(
                 "ML layer: profile={profile} (confident={confident}), scheduler={}, \
-                 seeded {added} paths; per-directory predictions on",
+                 seeded {added} paths; soft-404 demoted {demoted} probe(s); \
+                 per-directory predictions on",
                 config.ml_scheduler
             );
         }

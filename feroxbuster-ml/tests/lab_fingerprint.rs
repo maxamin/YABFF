@@ -41,6 +41,7 @@ fn load_labs() -> HashMap<String, Vec<ProbeResp>> {
                     url: r.url,
                     status: r.status,
                     headers: r.headers,
+                    ..Default::default()
                 })
                 .collect();
             (lab, probes)

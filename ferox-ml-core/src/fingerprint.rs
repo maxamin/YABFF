@@ -157,8 +157,45 @@ pub fn has_strong_discriminator(probes: &[ProbeResp]) -> bool {
 /// profile — rather than trust a confident-but-wrong fingerprint. Validated on
 /// the jsintel labs: it demotes the Juice Shop / DVWA catch-alls while leaving
 /// WordPress (whose cookie + `xmlrpc.php` 405 survive) classified.
+///
+/// Most precise when the probes have first been cleaned by [`apply_soft_404`]
+/// (E2): then "present" already excludes catch-all soft-404 bodies and this is a
+/// backstop for callers without body data.
 pub fn is_catch_all(probes: &[ProbeResp]) -> bool {
     present_fraction(probes) > CATCH_ALL_PRESENT_FRACTION && !has_strong_discriminator(probes)
+}
+
+/// E2 — learn the server's soft-404 response signature(s) from probes to random,
+/// almost-certainly-absent paths. Each answered random probe contributes its
+/// [`ProbeResp::signature`] as a known-bogus fingerprint.
+pub fn learn_soft_404(random_probes: &[ProbeResp]) -> crate::dedup::SoftNotFoundFilter {
+    let mut filter = crate::dedup::SoftNotFoundFilter::new();
+    for p in random_probes {
+        if p.status != 0 {
+            filter.learn_bogus(p.signature());
+        }
+    }
+    filter
+}
+
+/// E2 — per-path soft-404 scoring. A catch-all server answers 200 to every path
+/// with the *same* soft-404 body; comparing each discriminating probe's signature
+/// to the learned baseline tells real content from that uniform noise. Probes
+/// whose signature matches the soft-404 baseline are demoted to status 404 so
+/// that [`feature_vector`] / [`present_fraction`] / [`is_catch_all`] treat them
+/// as absent — turning "everything is present" back into the true, sparse signal.
+/// Returns how many probes were demoted. A no-op when `filter` learned nothing or
+/// the probes carry no body data (all sizes 0 collapse to one bucket, but with an
+/// empty filter nothing matches).
+pub fn apply_soft_404(probes: &mut [ProbeResp], filter: &crate::dedup::SoftNotFoundFilter) -> usize {
+    let mut demoted = 0;
+    for p in probes.iter_mut() {
+        if p.status != 0 && p.status != 404 && filter.is_soft_not_found(&p.signature()) {
+            p.status = 404;
+            demoted += 1;
+        }
+    }
+    demoted
 }
 
 /// Nearest-centroid classifier over the four profile centroids.

@@ -56,6 +56,15 @@ pub fn is_catch_all(probes: &[ProbeResp]) -> bool {
     ferox_ml_core::fingerprint::is_catch_all(probes)
 }
 
+/// E2 per-path soft-404 scoring: learn the soft-404 baseline from probes to
+/// random, almost-certainly-absent paths, then demote any discriminating probe
+/// whose response matches that baseline to status 404 (so a catch-all's uniform
+/// soft-404 body no longer reads as "present"). Returns how many were demoted.
+pub fn score_soft_404(probes: &mut [ProbeResp], random_probes: &[ProbeResp]) -> usize {
+    let filter = ferox_ml_core::fingerprint::learn_soft_404(random_probes);
+    ferox_ml_core::fingerprint::apply_soft_404(probes, &filter)
+}
+
 /// Confidence-gated fingerprint. Returns `(profile, confident)`.
 ///
 /// Classification is only trusted when all of: (a) at least one probe answered

@@ -94,14 +94,25 @@ profile), and guarded by tests in `confusion.rs`, `lab_fingerprint.rs`, and
 `ferox-ml-core/tests/engines.rs`. Next step is E2 — replace the global
 present-fraction with per-path soft-404 body signatures from `dedup`.
 
-### ⬜ E2 — Per-path soft-404 scoring via SimHash bodies
+### ✅ E2 — Per-path soft-404 scoring  *(shipped)*
 
-The `dedup` engine (SimHash + response signatures) already exists but isn't wired
-into fingerprinting. Learn the soft-404 signature from a random probe, then treat
-a probe as "present" only if its body signature *differs* from the soft-404 one.
-This replaces E1's global fraction with per-path truth. *Test:* extend
-`confusion.rs` to carry body signatures in the fixtures and assert Juice
-Shop/DVWA markers are rejected while WordPress markers survive.
+Replaces E1's global present-fraction with **per-path truth**: probe a few random,
+almost-certainly-absent paths to learn the server's soft-404 response
+[`Signature`](../../ferox-ml-core/src/dedup.rs) (status + bucketed length + word /
+line counts), then demote any discriminating probe whose response *matches* that
+baseline to status 404. A catch-all's uniform 200 body no longer reads as a marker
+— `present` collapses to the real, sparse signal — while a genuine 200 with a
+distinct body survives.
+
+**Shipped** in [`ferox-ml-core/src/fingerprint.rs`](../../ferox-ml-core/src/fingerprint.rs)
+as `learn_soft_404` + `apply_soft_404` (over a new `content_length` /
+`word_count` / `line_count` on `ProbeResp`, with `ProbeResp::signature()`). Wired
+in: the fork's `main.rs` reads probe bodies and probes 3 random paths
+(`ml::score_soft_404` before fingerprinting); feroxml's orchestrator learns from
+the random probes it already sends and cleans the probe views before classifying.
+Covered by `ferox-ml-core/tests/engines.rs`. E2 runs *before* E1, which remains a
+backstop for callers with no body data (e.g. fixtures with sizes 0). Next: feed
+full-body SimHash (not just the coarse signature) for finer soft-404 matching.
 
 ### ⬜ E3 — Feature weighting
 
@@ -149,7 +160,8 @@ siblings are still proposed. *Test:* learn `getUserById`, predict after
 
 The fingerprinter is accurate on clean signal (100%) and the confidence gate
 degrades safely, but real-world catch-all servers drop field accuracy to 40%.
-The catch-all guard (E1) — now **shipped** in the engine — cuts confident errors
-3→1 with no cost to correct answers, turning wrong guesses into safe abstentions;
-E2–E4 are the path to recovering the field cases properly (classifying them, not
-just abstaining).
+The catch-all guard (E1) and per-path soft-404 scoring (E2) — both now **shipped**
+in the engine — turn the catch-all field cases from confident-wrong into safe
+abstentions (confident errors 3→1, no correct answers lost), E2 doing it with
+per-path precision rather than a global heuristic. E3–E4 (feature weighting, more
+profiles) are the path to actually *classifying* those cases rather than abstaining.

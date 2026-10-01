@@ -20,6 +20,9 @@ fn to_probe_views(resps: &[FeroxResponse]) -> Vec<crate::ProbeResp> {
             url: r.url.clone(),
             status: r.status,
             headers: r.headers.clone(),
+            content_length: r.content_length,
+            word_count: r.word_count,
+            line_count: r.line_count,
         })
         .collect()
 }
@@ -93,7 +96,15 @@ impl Campaign {
             extract_links: false,
         })?;
 
-        let probe_views = to_probe_views(&probe_resps);
+        // E2: learn the soft-404 signature from the random probes, then demote any
+        // discriminating probe that returns the same soft-404 body to "absent", so
+        // per-path presence reflects real content, not a catch-all's uniform body.
+        let (random_views, mut probe_views): (Vec<_>, Vec<_>) = to_probe_views(&probe_resps)
+            .into_iter()
+            .partition(|v| random_paths.iter().any(|r| v.url.contains(r.as_str())));
+        let soft404 = fingerprint::learn_soft_404(&random_views);
+        fingerprint::apply_soft_404(&mut probe_views, &soft404);
+
         let features = feature_vector(&probe_views);
         let classifier: Box<dyn Classifier> =
             fingerprint::build(&self.cfg.classifier, self.cfg.seed);

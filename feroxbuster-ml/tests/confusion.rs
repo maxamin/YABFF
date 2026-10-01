@@ -41,6 +41,7 @@ fn lab_dataset() -> Vec<(&'static str, &'static str, Vec<ProbeResp>)> {
                     url: r.url.clone(),
                     status: r.status,
                     headers: r.headers.clone(),
+                    ..Default::default()
                 })
                 .collect();
             (*lab, *label, probes)

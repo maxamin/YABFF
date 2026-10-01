@@ -4,7 +4,8 @@
 
 use ferox_ml_core::dedup::{hamming, simhash, Signature, SoftNotFoundFilter};
 use ferox_ml_core::fingerprint::{
-    self, feature_vector, has_strong_discriminator, is_catch_all, present_fraction, NearestCentroid,
+    self, apply_soft_404, feature_vector, has_strong_discriminator, is_catch_all, learn_soft_404,
+    present_fraction, NearestCentroid,
 };
 use ferox_ml_core::interfaces::{Classifier, Predictor, Scheduler};
 use ferox_ml_core::markov::MarkovModel;
@@ -117,6 +118,48 @@ fn catch_all_guard_fires_only_without_a_strong_discriminator() {
     r.headers.insert("set-cookie".into(), "JSESSIONID=abc; Path=/".into());
     jsession.push(r);
     assert!(!is_catch_all(&jsession));
+}
+
+#[test]
+fn e2_soft404_scoring_demotes_catchall_200s_but_keeps_real_content() {
+    // on a catch-all, random probes return the server's uniform soft-404 body
+    let soft = |url: &str, status: u16| ProbeResp {
+        url: url.into(),
+        status,
+        content_length: 1500,
+        word_count: 42,
+        line_count: 10,
+        ..Default::default()
+    };
+    let random = vec![
+        soft("https://x/zzz-absent-a1b2", 200),
+        soft("https://x/zzz-absent-c3d4", 200),
+    ];
+    let filter = learn_soft_404(&random);
+
+    // discriminating probes returning that SAME soft-404 body are demoted to 404,
+    // so path-presence no longer reads them as real markers
+    let mut catchall = vec![soft("https://x/wp-json", 200), soft("https://x/actuator", 200)];
+    assert_eq!(apply_soft_404(&mut catchall, &filter), 2);
+    assert!(catchall.iter().all(|p| p.status == 404));
+    assert_eq!(present_fraction(&catchall), 0.0);
+
+    // a genuine 200 with a distinct body survives
+    let mut real = vec![ProbeResp {
+        url: "https://x/api".into(),
+        status: 200,
+        content_length: 90_000,
+        word_count: 1200,
+        line_count: 400,
+        ..Default::default()
+    }];
+    assert_eq!(apply_soft_404(&mut real, &filter), 0);
+    assert_eq!(real[0].status, 200);
+
+    // an empty filter (no random probes answered) is a no-op
+    let empty = learn_soft_404(&[]);
+    let mut probes = vec![soft("https://x/api", 200)];
+    assert_eq!(apply_soft_404(&mut probes, &empty), 0);
 }
 
 #[test]
