@@ -132,6 +132,34 @@
    "headers": {
     "content-type": "text/html; charset=UTF-8"
    }
+  },
+  {
+   "url": "http://127.0.0.1:3000/manifest.webmanifest",
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.1:3000/_next",
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.1:3000/assets",
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.1:3000/static/admin",
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=UTF-8"
+   }
   }
  ],
  "dvwa": [
@@ -140,7 +168,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=ba6f2b73744541753665e81a443732f6; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=f99b07786e6ed4f047bc002a5a5abe54; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -149,7 +177,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=17ff1964bd1e9a7314b210c67401d587; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=bf873daac0ad04fab265e6ae82266684; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -158,7 +186,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=6fa9d1ad3d473346544b72f498e9f423; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=aa78e3fdf33d53b2d16b527e149b455c; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -167,7 +195,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=b542f2ec8689ad86b897e9c7725cd15d; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=7b2b21d9cdaf3ca2785f693e0abf8b7e; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -176,7 +204,7 @@
    "status": 302,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=00d7dc549f7d21398fa3bead9cf64470; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=bd2f25c3957bab109d39413c38c6e0f0; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -185,7 +213,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=4df10af11f681634f1b43869d557f3de; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=1f60c98776a463828b808e520ba8d7fc; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -194,7 +222,7 @@
    "status": 302,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=ea3b0802372c66eed3f5cbfa44d97cd0; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=4aedb67706958226e17e8a41a1bd5bb2; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -203,7 +231,7 @@
    "status": 302,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=7f7624dd878434f7e18138ac522d97b4; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=2bb8eae4a1aaa0a97b5761e4f636314f; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -212,7 +240,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=c58f8363508c02c0b62570020c066712; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=3681e00257e6f14ed7c3b9ca63f07f3b; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -221,7 +249,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=d9ac1f4a6f128faf0484c9294ac2d275; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=2ab5dd53bbc4379cc3f54edd1de41791; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -230,7 +258,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=542fb997b8d2e8bac9b85ae8f04ca8fe; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=c8709a6085002c47b5309ba405979e38; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -239,7 +267,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=73a5bb92ef15eb63a38814f3897743e7; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=2804d7709040acf1e73bc47f725cb20a; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -248,7 +276,7 @@
    "status": 302,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=ec9977c32a7c020a62576aedfc3680b1; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=9c7dcf0733980366600d8a2501a7fb16; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -269,7 +297,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=0a24f8331d7d8abfe698f451324aca38; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=17dcc236b22bde69aeac639774e132df; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -278,7 +306,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=7a57e278446cc6a4931efe41d5c069e0; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=cd5a6f242523fc4e0f17efe0aed6c49c; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -287,7 +315,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=7bec73c5ba42b5baeb5a3f76be7aaae4; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=7e4815e10a5604216db9855cd5b2556a; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -296,8 +324,44 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=c5da9c0f61215e4b871302c12c91dcd8; expires=Fri, 02 Oct 2026 12:32:52 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=40d69c123a158641d342544818a20ff7; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.3:8081/manifest.webmanifest",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "set-cookie": "PHPSESSID=640fdcc558920f68097c7cd2ae215b2b; expires=Fri, 02 Oct 2026 18:33:09 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "content-type": "text/html;charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.3:8081/_next",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "set-cookie": "PHPSESSID=b00c1cf94d09e9be32fa1d62c2a4f7a7; expires=Fri, 02 Oct 2026 18:33:09 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "content-type": "text/html;charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.3:8081/assets",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "set-cookie": "PHPSESSID=9ce1a96a72c5edfdc1583699bce2bbd8; expires=Fri, 02 Oct 2026 18:33:09 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "content-type": "text/html;charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.3:8081/static/admin",
+   "status": 302,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "set-cookie": "PHPSESSID=3066bbec5966f813acfcdfc28af1ee0e; expires=Fri, 02 Oct 2026 18:33:09 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "content-type": "text/html; charset=UTF-8"
    }
   }
  ],
@@ -394,6 +458,26 @@
   },
   {
    "url": "http://127.0.0.2:8082/server-status",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/manifest.webmanifest",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/_next",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/assets",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/static/admin",
    "status": 404,
    "headers": {}
   }
@@ -551,6 +635,38 @@
     "x-powered-by": "PHP/8.4.26",
     "content-type": "text/html; charset=UTF-8"
    }
+  },
+  {
+   "url": "http://127.0.0.8:8083/manifest.webmanifest",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.8:8083/_next",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.8:8083/assets",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.8:8083/static/admin",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8"
+   }
   }
  ],
  "django": [
@@ -560,7 +676,7 @@
    "headers": {
     "server": "WSGIServer/0.2 CPython/3.14.7",
     "content-type": "text/html; charset=utf-8",
-    "set-cookie": "csrftoken=uS5if5xcMWOfynZY3aIaDGHFzmq4rHyB; expires=Thu, 30 Sep 2027 12:33:00 GMT; Max-Age=31449600; Path=/; SameSite=Lax"
+    "set-cookie": "csrftoken=lNKGsNNL1SsToglhe91pJAv0WzxfvRsy; expires=Thu, 30 Sep 2027 18:33:18 GMT; Max-Age=31449600; Path=/; SameSite=Lax"
    }
   },
   {
@@ -701,6 +817,38 @@
   },
   {
    "url": "http://127.0.0.11:8092/server-status",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/manifest.webmanifest",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/_next",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/assets",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/static/admin",
    "status": 404,
    "headers": {
     "server": "WSGIServer/0.2 CPython/3.14.7",

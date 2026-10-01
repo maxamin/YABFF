@@ -6,10 +6,20 @@ estate — OWASP Juice Shop, DVWA, WebGoat, WordPress, and Django (the
 
 The fingerprint probe (`feroxbuster::ml::probe_paths()`) was replayed against each
 live lab and the responses captured into
-[`feroxbuster-ml/tests/fixtures/jsintel_labs.json`](../../feroxbuster-ml/tests/fixtures/jsintel_labs.json),
-so the test
-([`tests/lab_fingerprint.rs`](../../feroxbuster-ml/tests/lab_fingerprint.rs)) is
-deterministic and offline. Re-capture with the probe script if the labs change.
+[`feroxbuster-ml/tests/fixtures/jsintel_labs.json`](../../feroxbuster-ml/tests/fixtures/jsintel_labs.json)
+(and `jsintel_labs_full.json`, which adds response sizes + soft-404 baselines), so
+the tests are deterministic and offline. Re-capture with
+[`scripts/probe_jsintel_labs.py`](../../scripts/probe_jsintel_labs.py) if the labs
+change.
+
+Two tests run against these captures:
+[`tests/lab_fingerprint.rs`](../../feroxbuster-ml/tests/lab_fingerprint.rs)
+(fingerprint + gate verdicts) and
+[`tests/lab_features.rs`](../../feroxbuster-ml/tests/lab_features.rs), which drives
+**every** engine function against all five labs — feature vector, weighted
+classify (E3), calibrated confidence (E5), catch-all guard (E1), per-path soft-404
+scoring (E2), the gate, online re-fingerprinting (E6), K-Means refresh (E7), Markov
+seed/predict/subword back-off (E8), BM25, and the bandit.
 
 ## Fingerprint verdicts (captured 2026-10-01)
 

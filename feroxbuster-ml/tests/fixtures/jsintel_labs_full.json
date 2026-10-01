@@ -1,0 +1,1380 @@
+{
+ "juice-shop": {
+  "probes": [
+   {
+    "url": "http://127.0.0.1:3000/",
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 9393,
+    "word_count": 393,
+    "line_count": 34
+   },
+   {
+    "url": "http://127.0.0.1:3000/wp-json",
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 9393,
+    "word_count": 393,
+    "line_count": 34
+   },
+   {
+    "url": "http://127.0.0.1:3000/wp-login.php",
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 9393,
+    "word_count": 393,
+    "line_count": 34
+   },
+   {
+    "url": "http://127.0.0.1:3000/actuator",
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 9393,
+    "word_count": 393,
+    "line_count": 34
+   },
+   {
+    "url": "http://127.0.0.1:3000/actuator/health",
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 9393,
+    "word_count": 393,
+    "line_count": 34
+   },
+   {
+    "url": "http://127.0.0.1:3000/api",
+    "status": 500,
+    "headers": {
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2904,
+    "word_count": 174,
+    "line_count": 50
+   },
+   {
+    "url": "http://127.0.0.1:3000/api/v1",
+    "status": 500,
+    "headers": {
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2910,
+    "word_count": 174,
+    "line_count": 50
+   },
+   {
+    "url": "http://127.0.0.1:3000/api/v2",
+    "status": 500,
+    "headers": {
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2910,
+    "word_count": 174,
+    "line_count": 50
+   },
+   {
+    "url": "http://127.0.0.1:3000/rest",
+    "status": 500,
+    "headers": {
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2906,
+    "word_count": 174,
+    "line_count": 50
+   },
+   {
+    "url": "http://127.0.0.1:3000/graphql",
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 9393,
+    "word_count": 393,
+    "line_count": 34
+   },
+   {
+    "url": "http://127.0.0.1:3000/swagger-ui.html",
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 9393,
+    "word_count": 393,
+    "line_count": 34
+   },
+   {
+    "url": "http://127.0.0.1:3000/openapi.json",
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 9393,
+    "word_count": 393,
+    "line_count": 34
+   },
+   {
+    "url": "http://127.0.0.1:3000/v2/api-docs",
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 9393,
+    "word_count": 393,
+    "line_count": 34
+   },
+   {
+    "url": "http://127.0.0.1:3000/.git/HEAD",
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 9393,
+    "word_count": 393,
+    "line_count": 34
+   },
+   {
+    "url": "http://127.0.0.1:3000/robots.txt",
+    "status": 200,
+    "headers": {
+     "content-type": "text/plain; charset=utf-8"
+    },
+    "content_length": 28,
+    "word_count": 4,
+    "line_count": 2
+   },
+   {
+    "url": "http://127.0.0.1:3000/xmlrpc.php",
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 9393,
+    "word_count": 393,
+    "line_count": 34
+   },
+   {
+    "url": "http://127.0.0.1:3000/index.php",
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 9393,
+    "word_count": 393,
+    "line_count": 34
+   },
+   {
+    "url": "http://127.0.0.1:3000/index.jsp",
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 9393,
+    "word_count": 393,
+    "line_count": 34
+   },
+   {
+    "url": "http://127.0.0.1:3000/server-status",
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 9393,
+    "word_count": 393,
+    "line_count": 34
+   },
+   {
+    "url": "http://127.0.0.1:3000/manifest.webmanifest",
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 9393,
+    "word_count": 393,
+    "line_count": 34
+   },
+   {
+    "url": "http://127.0.0.1:3000/_next",
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 9393,
+    "word_count": 393,
+    "line_count": 34
+   },
+   {
+    "url": "http://127.0.0.1:3000/assets",
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 9393,
+    "word_count": 393,
+    "line_count": 34
+   },
+   {
+    "url": "http://127.0.0.1:3000/static/admin",
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 9393,
+    "word_count": 393,
+    "line_count": 34
+   }
+  ],
+  "random": [
+   {
+    "url": "http://127.0.0.1:3000/zz-absent-a1b2c3d4",
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 9393,
+    "word_count": 393,
+    "line_count": 34
+   },
+   {
+    "url": "http://127.0.0.1:3000/zz-absent-e5f6a7b8",
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 9393,
+    "word_count": 393,
+    "line_count": 34
+   },
+   {
+    "url": "http://127.0.0.1:3000/zz-absent-99x0y1z2",
+    "status": 200,
+    "headers": {
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 9393,
+    "word_count": 393,
+    "line_count": 34
+   }
+  ]
+ },
+ "dvwa": {
+  "probes": [
+   {
+    "url": "http://127.0.0.3:8081/",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=f99b07786e6ed4f047bc002a5a5abe54; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html;charset=utf-8"
+    },
+    "content_length": 1342,
+    "word_count": 116,
+    "line_count": 75
+   },
+   {
+    "url": "http://127.0.0.3:8081/wp-json",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=bf873daac0ad04fab265e6ae82266684; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html;charset=utf-8"
+    },
+    "content_length": 1342,
+    "word_count": 116,
+    "line_count": 75
+   },
+   {
+    "url": "http://127.0.0.3:8081/wp-login.php",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=aa78e3fdf33d53b2d16b527e149b455c; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html;charset=utf-8"
+    },
+    "content_length": 1342,
+    "word_count": 116,
+    "line_count": 75
+   },
+   {
+    "url": "http://127.0.0.3:8081/actuator",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=7b2b21d9cdaf3ca2785f693e0abf8b7e; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html;charset=utf-8"
+    },
+    "content_length": 1342,
+    "word_count": 116,
+    "line_count": 75
+   },
+   {
+    "url": "http://127.0.0.3:8081/actuator/health",
+    "status": 302,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=bd2f25c3957bab109d39413c38c6e0f0; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.3:8081/api",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=1f60c98776a463828b808e520ba8d7fc; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html;charset=utf-8"
+    },
+    "content_length": 1342,
+    "word_count": 116,
+    "line_count": 75
+   },
+   {
+    "url": "http://127.0.0.3:8081/api/v1",
+    "status": 302,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=4aedb67706958226e17e8a41a1bd5bb2; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.3:8081/api/v2",
+    "status": 302,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=2bb8eae4a1aaa0a97b5761e4f636314f; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.3:8081/rest",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=3681e00257e6f14ed7c3b9ca63f07f3b; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html;charset=utf-8"
+    },
+    "content_length": 1342,
+    "word_count": 116,
+    "line_count": 75
+   },
+   {
+    "url": "http://127.0.0.3:8081/graphql",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=2ab5dd53bbc4379cc3f54edd1de41791; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html;charset=utf-8"
+    },
+    "content_length": 1342,
+    "word_count": 116,
+    "line_count": 75
+   },
+   {
+    "url": "http://127.0.0.3:8081/swagger-ui.html",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=c8709a6085002c47b5309ba405979e38; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html;charset=utf-8"
+    },
+    "content_length": 1342,
+    "word_count": 116,
+    "line_count": 75
+   },
+   {
+    "url": "http://127.0.0.3:8081/openapi.json",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=2804d7709040acf1e73bc47f725cb20a; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html;charset=utf-8"
+    },
+    "content_length": 1342,
+    "word_count": 116,
+    "line_count": 75
+   },
+   {
+    "url": "http://127.0.0.3:8081/v2/api-docs",
+    "status": 302,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=9c7dcf0733980366600d8a2501a7fb16; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.3:8081/.git/HEAD",
+    "status": 200,
+    "headers": {},
+    "content_length": 23,
+    "word_count": 2,
+    "line_count": 2
+   },
+   {
+    "url": "http://127.0.0.3:8081/robots.txt",
+    "status": 200,
+    "headers": {
+     "content-type": "text/plain; charset=UTF-8"
+    },
+    "content_length": 25,
+    "word_count": 4,
+    "line_count": 2
+   },
+   {
+    "url": "http://127.0.0.3:8081/xmlrpc.php",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=17dcc236b22bde69aeac639774e132df; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html;charset=utf-8"
+    },
+    "content_length": 1342,
+    "word_count": 116,
+    "line_count": 75
+   },
+   {
+    "url": "http://127.0.0.3:8081/index.php",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=cd5a6f242523fc4e0f17efe0aed6c49c; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html;charset=utf-8"
+    },
+    "content_length": 1342,
+    "word_count": 116,
+    "line_count": 75
+   },
+   {
+    "url": "http://127.0.0.3:8081/index.jsp",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=7e4815e10a5604216db9855cd5b2556a; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html;charset=utf-8"
+    },
+    "content_length": 1342,
+    "word_count": 116,
+    "line_count": 75
+   },
+   {
+    "url": "http://127.0.0.3:8081/server-status",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=40d69c123a158641d342544818a20ff7; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html;charset=utf-8"
+    },
+    "content_length": 1342,
+    "word_count": 116,
+    "line_count": 75
+   },
+   {
+    "url": "http://127.0.0.3:8081/manifest.webmanifest",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=640fdcc558920f68097c7cd2ae215b2b; expires=Fri, 02 Oct 2026 18:33:09 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html;charset=utf-8"
+    },
+    "content_length": 1342,
+    "word_count": 116,
+    "line_count": 75
+   },
+   {
+    "url": "http://127.0.0.3:8081/_next",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=b00c1cf94d09e9be32fa1d62c2a4f7a7; expires=Fri, 02 Oct 2026 18:33:09 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html;charset=utf-8"
+    },
+    "content_length": 1342,
+    "word_count": 116,
+    "line_count": 75
+   },
+   {
+    "url": "http://127.0.0.3:8081/assets",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=9ce1a96a72c5edfdc1583699bce2bbd8; expires=Fri, 02 Oct 2026 18:33:09 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html;charset=utf-8"
+    },
+    "content_length": 1342,
+    "word_count": 116,
+    "line_count": 75
+   },
+   {
+    "url": "http://127.0.0.3:8081/static/admin",
+    "status": 302,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=3066bbec5966f813acfcdfc28af1ee0e; expires=Fri, 02 Oct 2026 18:33:09 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   }
+  ],
+  "random": [
+   {
+    "url": "http://127.0.0.3:8081/zz-absent-a1b2c3d4",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=83ffee308b51501cf25cd04a42f79ed1; expires=Fri, 02 Oct 2026 18:33:09 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html;charset=utf-8"
+    },
+    "content_length": 1342,
+    "word_count": 116,
+    "line_count": 75
+   },
+   {
+    "url": "http://127.0.0.3:8081/zz-absent-e5f6a7b8",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=23943d3ddda5ceb1cc078690a03749ac; expires=Fri, 02 Oct 2026 18:33:09 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html;charset=utf-8"
+    },
+    "content_length": 1342,
+    "word_count": 116,
+    "line_count": 75
+   },
+   {
+    "url": "http://127.0.0.3:8081/zz-absent-99x0y1z2",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "set-cookie": "PHPSESSID=92b61051988e2298aa79b78275c7ec30; expires=Fri, 02 Oct 2026 18:33:09 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+     "content-type": "text/html;charset=utf-8"
+    },
+    "content_length": 1342,
+    "word_count": 116,
+    "line_count": 75
+   }
+  ]
+ },
+ "webgoat": {
+  "probes": [
+   {
+    "url": "http://127.0.0.2:8082/",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/wp-json",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/wp-login.php",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/actuator",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/actuator/health",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/api",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/api/v1",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/api/v2",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/rest",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/graphql",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/swagger-ui.html",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/openapi.json",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/v2/api-docs",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/.git/HEAD",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/robots.txt",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/xmlrpc.php",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/index.php",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/index.jsp",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/server-status",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/manifest.webmanifest",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/_next",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/assets",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/static/admin",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   }
+  ],
+  "random": [
+   {
+    "url": "http://127.0.0.2:8082/zz-absent-a1b2c3d4",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/zz-absent-e5f6a7b8",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   },
+   {
+    "url": "http://127.0.0.2:8082/zz-absent-99x0y1z2",
+    "status": 404,
+    "headers": {},
+    "content_length": 0,
+    "word_count": 0,
+    "line_count": 0
+   }
+  ]
+ },
+ "wordpress": {
+  "probes": [
+   {
+    "url": "http://127.0.0.8:8083/",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/wp-json",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/wp-login.php",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8",
+     "set-cookie": "wordpress_test_cookie=WP%20Cookie%20check; path=/; HttpOnly"
+    },
+    "content_length": 5727,
+    "word_count": 345,
+    "line_count": 90
+   },
+   {
+    "url": "http://127.0.0.8:8083/actuator",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/actuator/health",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/api",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/api/v1",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/api/v2",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/rest",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/graphql",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/swagger-ui.html",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/openapi.json",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/v2/api-docs",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/.git/HEAD",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/robots.txt",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/xmlrpc.php",
+    "status": 405,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/plain;charset=UTF-8"
+    },
+    "content_length": 42,
+    "word_count": 6,
+    "line_count": 1
+   },
+   {
+    "url": "http://127.0.0.8:8083/index.php",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/index.jsp",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/server-status",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/manifest.webmanifest",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/_next",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/assets",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/static/admin",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   }
+  ],
+  "random": [
+   {
+    "url": "http://127.0.0.8:8083/zz-absent-a1b2c3d4",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/zz-absent-e5f6a7b8",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   },
+   {
+    "url": "http://127.0.0.8:8083/zz-absent-99x0y1z2",
+    "status": 200,
+    "headers": {
+     "x-powered-by": "PHP/8.4.26",
+     "content-type": "text/html; charset=UTF-8"
+    },
+    "content_length": 69297,
+    "word_count": 1725,
+    "line_count": 285
+   }
+  ]
+ },
+ "django": {
+  "probes": [
+   {
+    "url": "http://127.0.0.11:8092/",
+    "status": 200,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8",
+     "set-cookie": "csrftoken=lNKGsNNL1SsToglhe91pJAv0WzxfvRsy; expires=Thu, 30 Sep 2027 18:33:18 GMT; Max-Age=31449600; Path=/; SameSite=Lax"
+    },
+    "content_length": 547,
+    "word_count": 33,
+    "line_count": 8
+   },
+   {
+    "url": "http://127.0.0.11:8092/wp-json",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2693,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/wp-login.php",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2708,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/actuator",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2696,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/actuator/health",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2717,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/api",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2681,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/api/v1",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2690,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/api/v2",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2690,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/rest",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2684,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/graphql",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2693,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/swagger-ui.html",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2717,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/openapi.json",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2708,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/v2/api-docs",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2705,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/.git/HEAD",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2699,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/robots.txt",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2702,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/xmlrpc.php",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2702,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/index.php",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2699,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/index.jsp",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2699,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/server-status",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2711,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/manifest.webmanifest",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2732,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/_next",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2687,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/assets",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2690,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/static/admin",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2708,
+    "word_count": 248,
+    "line_count": 107
+   }
+  ],
+  "random": [
+   {
+    "url": "http://127.0.0.11:8092/zz-absent-a1b2c3d4",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2726,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/zz-absent-e5f6a7b8",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2726,
+    "word_count": 248,
+    "line_count": 107
+   },
+   {
+    "url": "http://127.0.0.11:8092/zz-absent-99x0y1z2",
+    "status": 404,
+    "headers": {
+     "server": "WSGIServer/0.2 CPython/3.14.7",
+     "content-type": "text/html; charset=utf-8"
+    },
+    "content_length": 2726,
+    "word_count": 248,
+    "line_count": 107
+   }
+  ]
+ }
+}

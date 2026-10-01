@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """Capture feroxbuster-ml's fingerprint probe against the live jsintel lab estate.
 
-Replays `feroxbuster::ml::probe_paths()` against each lab and writes the responses
-(status + the headers the fingerprinter reads) to
-`feroxbuster-ml/tests/fixtures/jsintel_labs.json`, which the deterministic
-`tests/lab_fingerprint.rs` replays. Re-run this only when the labs change; it
-needs the jsintel labs running on the loopback estate.
+Writes two fixtures under `feroxbuster-ml/tests/fixtures/`:
+
+* `jsintel_labs.json` — `{lab: [ {url, status, headers} ]}` for the discriminating
+  probe paths (used by the fingerprint tests).
+* `jsintel_labs_full.json` — `{lab: {probes:[...], random:[...], crawled:[...]}}`
+  where each response also carries `content_length` / `word_count` / `line_count`
+  (for E2 soft-404 scoring) and `random` holds probes to absent paths (the soft-404
+  baseline). Used by the end-to-end `lab_features.rs` test that drives every engine
+  function against the labs.
+
+Re-run only when the labs change; needs the jsintel labs running on loopback.
 
     python3 scripts/probe_jsintel_labs.py
 """
@@ -15,7 +21,6 @@ import socket
 import urllib.error
 import urllib.request
 
-# jsintel's web_default_labs (tests/lab/labs_index.py)
 LABS = {
     "juice-shop": "http://127.0.0.1:3000",
     "dvwa": "http://127.0.0.3:8081",
@@ -28,45 +33,55 @@ LABS = {
 PROBE = ["", "wp-json", "wp-login.php", "actuator", "actuator/health", "api",
          "api/v1", "api/v2", "rest", "graphql", "swagger-ui.html", "openapi.json",
          "v2/api-docs", ".git/HEAD", "robots.txt", "xmlrpc.php", "index.php",
-         "index.jsp", "server-status"]
+         "index.jsp", "server-status", "manifest.webmanifest", "_next", "assets",
+         "static/admin"]
 
-# headers the fingerprint feature-vector consults
+# random, almost-certainly-absent paths -> the server's soft-404 baseline (E2)
+RANDOM = ["zz-absent-a1b2c3d4", "zz-absent-e5f6a7b8", "zz-absent-99x0y1z2"]
+
 KEEP = {"content-type", "server", "x-powered-by", "set-cookie"}
-
-FIXTURE = os.path.join(os.path.dirname(__file__), "..", "feroxbuster-ml",
-                       "tests", "fixtures", "jsintel_labs.json")
+FIXDIR = os.path.join(os.path.dirname(__file__), "..", "feroxbuster-ml", "tests", "fixtures")
 
 
-def probe(base):
-    out = []
-    for p in PROBE:
-        url = f"{base}/{p}"
-        try:
-            req = urllib.request.Request(url, method="GET",
-                                         headers={"User-Agent": "ferox-probe"})
-            with urllib.request.urlopen(req) as r:
-                status, src = r.status, r.headers
-        except urllib.error.HTTPError as e:
-            status, src = e.code, (e.headers or {})
-        except Exception:
-            status, src = 0, {}
-        hdrs = {k.lower(): v for k, v in (src.items() if src else [])
-                if k.lower() in KEEP}
-        out.append({"url": url, "status": status, "headers": hdrs})
-    return out
+def fetch(url):
+    try:
+        req = urllib.request.Request(url, method="GET", headers={"User-Agent": "ferox-probe"})
+        with urllib.request.urlopen(req) as r:
+            status, src, body = r.status, r.headers, r.read()
+    except urllib.error.HTTPError as e:
+        status, src, body = e.code, (e.headers or {}), (e.read() if hasattr(e, "read") else b"")
+    except Exception:
+        return {"status": 0, "headers": {}, "content_length": 0, "word_count": 0, "line_count": 0}
+    try:
+        text = body.decode("utf-8", "replace")
+    except Exception:
+        text = ""
+    hdrs = {k.lower(): v for k, v in (src.items() if src else []) if k.lower() in KEEP}
+    return {
+        "status": status,
+        "headers": hdrs,
+        "content_length": len(body),
+        "word_count": len(text.split()),
+        "line_count": text.count("\n") + (1 if text else 0),
+    }
 
 
 def main():
     socket.setdefaulttimeout(4)
-    data = {}
+    simple = {}
+    full = {}
     for name, base in LABS.items():
-        resps = probe(base)
-        answered = sum(1 for r in resps if r["status"])
+        probes = [{"url": f"{base}/{p}", **fetch(f"{base}/{p}")} for p in PROBE]
+        random = [{"url": f"{base}/{p}", **fetch(f"{base}/{p}")} for p in RANDOM]
+        answered = sum(1 for r in probes if r["status"])
         print(f"{name:12} answered={answered}/{len(PROBE)}")
-        data[name] = resps
-    with open(FIXTURE, "w") as fh:
-        json.dump(data, fh, indent=1)
-    print(f"wrote {os.path.relpath(FIXTURE)}")
+        simple[name] = [{"url": r["url"], "status": r["status"], "headers": r["headers"]} for r in probes]
+        full[name] = {"probes": probes, "random": random}
+    with open(os.path.join(FIXDIR, "jsintel_labs.json"), "w") as fh:
+        json.dump(simple, fh, indent=1)
+    with open(os.path.join(FIXDIR, "jsintel_labs_full.json"), "w") as fh:
+        json.dump(full, fh, indent=1)
+    print(f"wrote jsintel_labs.json and jsintel_labs_full.json to {os.path.relpath(FIXDIR)}")
 
 
 if __name__ == "__main__":
