@@ -316,8 +316,9 @@ impl Campaign {
         };
 
         let mut summary = LearnSummary::default();
+        let total = targets.len();
 
-        for target in targets {
+        for (idx, target) in targets.iter().enumerate() {
             let scope = match Scope::new(target, &self.cfg.scope) {
                 Ok(s) => s,
                 Err(_) => continue,
@@ -370,6 +371,22 @@ impl Campaign {
             }
             summary.targets_learned += 1;
             summary.paths_ingested += learned_here;
+
+            // progress + periodic checkpoint so a long run over a large host list
+            // is observable, resumable, and crash-safe (the model already starts
+            // from model_out if it exists, so a re-run continues where it left off).
+            eprintln!(
+                "[learn {}/{}] {} (+{learned_here} paths; {} contexts total)",
+                idx + 1,
+                total,
+                target,
+                model.context_count()
+            );
+            if (idx + 1) % 25 == 0 {
+                if let Ok(js) = model.to_json() {
+                    let _ = std::fs::write(model_out, js);
+                }
+            }
         }
 
         summary.contexts = model.context_count();

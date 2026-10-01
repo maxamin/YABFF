@@ -62,9 +62,23 @@ feroxml --learn --targets labs.txt --i-have-authorization \
 feroxml --url https://target.example --i-have-authorization --model .feroxml/model.json
 ```
 
+**Large host lists (domains + subdomains).** `--targets` takes one host per line;
+bare hosts (`api.example.com`) are normalized to `https://` automatically, so a
+subdomain list works directly. For a long run, learning is **resumable and
+crash-safe**: the model starts from `--model` if it exists, a per-target progress
+line is printed (`[learn 42/5000] …`), and the model is checkpointed to disk every
+25 targets — re-running continues where it left off. Rate-limit with `--rate-limit`
+/ `--threads`, and scope-limit with repeated `--scope`. (Only ever point it at
+hosts you're authorized to assess.)
+
+```bash
+feroxml --learn --targets scope.txt --i-have-authorization \
+        --model .feroxml/model.json --rate-limit 100 --threads 20
+```
+
 Learning **accumulates**: each learn run and each scan merges its observations
 into the model file, so the engine gets smarter over time. Example learn run over
-four local labs:
+local labs:
 
 ```
 === feroxml learn summary ===

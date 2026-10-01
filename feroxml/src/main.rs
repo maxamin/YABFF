@@ -227,6 +227,13 @@ fn main() {
     if let Some(u) = &cli.url {
         targets.push(u.clone());
     }
+    // normalize bare domains/subdomains (e.g. "api.example.com") to URLs so a plain
+    // host list (one per line) works directly with --targets.
+    for t in targets.iter_mut() {
+        if !t.contains("://") {
+            *t = format!("https://{t}");
+        }
+    }
     if targets.is_empty() {
         eprintln!("no targets: pass --url <URL> or --targets <file>.");
         exit(2);
