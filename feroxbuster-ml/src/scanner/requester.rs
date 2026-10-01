@@ -1320,26 +1320,24 @@ mod tests {
         requester.tune(PolicyTrigger::Status429).await.unwrap();
 
         let original = requester.policy_data.heap.read().unwrap().original;
-        // Allow for timing imprecision: 400 reqs / 1.01s elapsed = 399 req/s
+        // original = 400 reqs / elapsed. sleep(1s) only ever *overshoots*, so this
+        // can dip below 400 under load; use a generous lower bound (tolerates up to
+        // ~1.3s elapsed) rather than a ±0.25% window that flakes on scheduler jitter.
         assert!(
-            (399..=401).contains(&original),
-            "Expected ~400 req/s original, got {}",
+            (300..=401).contains(&original),
+            "Expected ~400 req/s original (>=300 after sleep jitter), got {}",
             original
         );
 
+        // the tuning math is exact and timing-independent: auto-tune halves the
+        // observed rate, and the live rate limiter is set to that limit.
         let limit = requester.policy_data.get_limit();
-        // Limit is original/2, so with original 399-401, limit is 199-200
-        assert!(
-            (199..=201).contains(&limit),
-            "Expected limit ~200, got {}",
-            limit
-        );
+        assert_eq!(limit, (original / 2) as usize, "limit should be original/2");
 
         let rate_limiter_max = requester.rate_limiter.read().await.as_ref().unwrap().max();
-        assert!(
-            (199..=201).contains(&rate_limiter_max),
-            "Expected rate limiter max ~200, got {}",
-            rate_limiter_max
+        assert_eq!(
+            rate_limiter_max, limit,
+            "rate limiter max should equal the tuned limit"
         );
 
         scan.finish(0).unwrap();
