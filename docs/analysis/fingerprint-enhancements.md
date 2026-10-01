@@ -45,7 +45,7 @@ with no exact profile → `LEGACY_STATIC`):
 
 | lab | true | predicted | correct |
 |---|---|---|:-:|
-| juice-shop | REST | SPRING | ✗ |
+| juice-shop | REST | REST | ✓ |
 | dvwa | STATIC | WP | ✗ |
 | webgoat | SPRING | STATIC | ✗ |
 | wordpress | WP | WP | ✓ |
@@ -53,16 +53,18 @@ with no exact profile → `LEGACY_STATIC`):
 
 | true \ pred | REST | SPRING | WP | STATIC |
 |---|---:|---:|---:|---:|
-| **REST** | 0 | 1 | 0 | 0 |
+| **REST** | 1 | 0 | 0 | 0 |
 | **SPRING** | 0 | 0 | 0 | 1 |
 | **WP** | 0 | 0 | 1 | 0 |
 | **STATIC** | 0 | 0 | 1 | 1 |
 
-**Field accuracy: 2/5 = 0.40.** The classifier is perfect on clean signal but
-collapses on real servers for two reasons: **catch-all / soft-404 servers**
-(Juice Shop, DVWA answer 200 to *every* probe, so path-presence is noise) and
-**missing profiles** (DVWA is PHP-not-WordPress; WebGoat's app lives under
-`/WebGoat/` so the probe sees only 404s). This gap is what the enhancements target.
+**Field accuracy: 3/5 = 0.60** (raw classifier, after E3 weighting — it was 2/5
+before weighting; Juice Shop now reads REST instead of Spring). The two remaining
+misses show the hard cases the enhancements target: **catch-all / soft-404
+servers** (Juice Shop, DVWA answer 200 to *every* probe, so path-presence is
+noise — note Juice Shop's "correct" REST here is a catch-all coincidence E1/E2
+rightly distrust) and **missing profiles** (DVWA is PHP-not-WordPress; WebGoat's
+app lives under `/WebGoat/`, so the probe sees only 404s).
 
 ## 3. Enhancements
 
@@ -78,12 +80,15 @@ the field labs:
 
 | | confident-correct | confident-wrong | abstained |
 |---|---:|---:|---:|
-| baseline (raw classifier) | 2 | 3 | 0 |
+| baseline (raw classifier) | 3 | 2 | 0 |
 | **+ catch-all guard** | **2** | **1** | **2** |
 
-It cuts confident mistakes from 3 to 1 **without losing a single correct answer** —
-Juice Shop and DVWA (wrong guesses) become safe abstentions, while WordPress is
-kept because its cookie + `xmlrpc.php` 405 survive the catch-all.
+It abstains the two catch-alls (Juice Shop, DVWA) — cutting confident errors (DVWA
+was wrong) and declining Juice Shop's coincidentally-correct REST guess, since a
+server that answers every path can't be trusted. WordPress is kept (its cookie +
+`xmlrpc.php` 405 survive the catch-all). The guard's invariant, asserted in the
+test: it **only ever abstains genuine catch-alls**, so it never drops a correct
+answer on a trustworthy target.
 
 **Shipped** in [`ferox-ml-core/src/fingerprint.rs`](../../ferox-ml-core/src/fingerprint.rs)
 as `is_catch_all` / `present_fraction` / `has_strong_discriminator`
@@ -114,12 +119,28 @@ Covered by `ferox-ml-core/tests/engines.rs`. E2 runs *before* E1, which remains 
 backstop for callers with no body data (e.g. fixtures with sizes 0). Next: feed
 full-body SimHash (not just the coarse signature) for finer soft-404 matching.
 
-### ⬜ E3 — Feature weighting
+### ✅ E3 — Feature weighting  *(shipped)*
 
-Classification is Euclidean over an 18-dim, mostly-binary vector where a flaky
-presence bit counts as much as a `JSESSIONID` cookie. Weight the vector so
-header/cookie/status discriminators dominate path-presence. *Test:* re-run the
-field matrix; expect DVWA (PHP, no WP cookie) to stop reading as WordPress.
+Classification was plain Euclidean over an 18-dim, mostly-binary vector where a
+flaky presence bit counted as much as a `JSESSIONID` cookie. The metric is now
+**weighted Euclidean** ([`FEATURE_WEIGHTS`](../../ferox-ml-core/src/profiles.rs)):
+session cookies, servlet/PHP/JSP signals and `X-Powered-By` are weighted up (2–3×),
+ubiquitous `robots.txt` down (0.5×), so a target with a weak accidental marker but
+a strong contradicting discriminator is classified by the discriminator.
+
+**Shipped** in [`fingerprint.rs`](../../ferox-ml-core/src/fingerprint.rs)
+(`weighted_euclidean` + `classify_with_weights`; `NearestCentroid` now uses
+`FEATURE_WEIGHTS`). A centroid still classifies to itself under any positive
+weights, so this is a safe refinement — the clean set stays at 100% and the
+`engines.rs` test confirms the weighted metric keeps WordPress/Spring correct even
+with accidental cross-framework presence bits injected.
+
+*Measured effect:* weighting raised raw field accuracy 2/5 → 3/5 — Juice Shop now
+reads REST instead of Spring, because the real REST signals outweigh its spurious
+`/actuator` presence. Flips are still rare with only four well-separated centroids
+(the clean set was already 100%), so the bigger pay-off comes with E4: as more,
+closer profiles are added, a correctly-weighted metric is what keeps them
+separable.
 
 ### ⬜ E4 — More profiles (NODE_SPA, PHP_GENERIC, DJANGO)
 
@@ -159,9 +180,10 @@ siblings are still proposed. *Test:* learn `getUserById`, predict after
 ## Takeaway
 
 The fingerprinter is accurate on clean signal (100%) and the confidence gate
-degrades safely, but real-world catch-all servers drop field accuracy to 40%.
-The catch-all guard (E1) and per-path soft-404 scoring (E2) — both now **shipped**
-in the engine — turn the catch-all field cases from confident-wrong into safe
-abstentions (confident errors 3→1, no correct answers lost), E2 doing it with
-per-path precision rather than a global heuristic. E3–E4 (feature weighting, more
-profiles) are the path to actually *classifying* those cases rather than abstaining.
+degrades safely; real-world catch-all servers are the hard case. Three
+enhancements are now **shipped** in the engine: E1 (catch-all guard) and E2
+(per-path soft-404 scoring) turn untrustworthy catch-alls into safe abstentions,
+and E3 (feature weighting) lifted raw field accuracy 2/5 → 3/5 by letting strong
+discriminators outweigh accidental presence. E4 (more, closer profiles) is the
+next step — actually *classifying* the PHP / SPA cases rather than abstaining, with
+the weighted metric from E3 keeping the denser profile space separable.

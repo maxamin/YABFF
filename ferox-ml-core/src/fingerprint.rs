@@ -12,7 +12,7 @@
 
 use crate::ProbeResp;
 use crate::interfaces::Classifier;
-use crate::profiles::{centroids, N_FEATURES, PROBE_PATHS};
+use crate::profiles::{centroids, FEATURE_WEIGHTS, N_FEATURES, PROBE_PATHS};
 use crate::tokenize::path_segments;
 
 /// Normalize a URL to its slash-joined path segments, lowercased.
@@ -114,8 +114,28 @@ pub fn feature_vector(responses: &[ProbeResp]) -> [f64; N_FEATURES] {
     ]
 }
 
-fn euclidean(a: &[f64], b: &[f64]) -> f64 {
-    a.iter().zip(b).map(|(x, y)| (x - y) * (x - y)).sum::<f64>().sqrt()
+/// Weighted Euclidean distance: each squared feature difference is scaled by its
+/// weight, so high-weight discriminators dominate the metric (E3).
+fn weighted_euclidean(a: &[f64], b: &[f64], weights: &[f64]) -> f64 {
+    a.iter()
+        .zip(b)
+        .zip(weights)
+        .map(|((x, y), w)| w * (x - y) * (x - y))
+        .sum::<f64>()
+        .sqrt()
+}
+
+/// Nearest-centroid classification under an explicit weight vector. Exposed so an
+/// evaluation can compare weighted (E3) vs unweighted metrics; the default
+/// [`NearestCentroid`] uses [`FEATURE_WEIGHTS`].
+pub fn classify_with_weights(features: &[f64], weights: &[f64]) -> (String, Vec<(String, f64)>) {
+    let mut dists: Vec<(String, f64)> = centroids()
+        .into_iter()
+        .map(|(name, c)| (name.to_string(), weighted_euclidean(features, &c, weights)))
+        .collect();
+    dists.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    let best = dists[0].0.clone();
+    (best, dists)
 }
 
 /// A server is treated as a catch-all / soft-404 responder when it answers
@@ -203,13 +223,8 @@ pub struct NearestCentroid;
 
 impl Classifier for NearestCentroid {
     fn classify(&self, features: &[f64]) -> (String, Vec<(String, f64)>) {
-        let mut dists: Vec<(String, f64)> = centroids()
-            .into_iter()
-            .map(|(name, c)| (name.to_string(), euclidean(features, &c)))
-            .collect();
-        dists.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-        let best = dists[0].0.clone();
-        (best, dists)
+        // E3: weighted metric so strong discriminators outweigh noisy presence bits
+        classify_with_weights(features, &FEATURE_WEIGHTS)
     }
 }
 

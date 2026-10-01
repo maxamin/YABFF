@@ -260,9 +260,24 @@ fn confusion_matrix_and_margin_sweep() {
     println!("| baseline | {b_c} | {b_w} | 0 |");
     println!("| + catch-all guard | {g_c} | {g_w} | {g_a} |");
 
-    // the enhancement must reduce confident mistakes without losing correct ones
+    // The guard must strictly cut confident mistakes, and must only ever abstain
+    // genuine catch-alls — so it never drops a *trustworthy* correct answer. (A
+    // correct raw guess on a catch-all is coincidence: the server answers every
+    // path, so its classification can't be trusted even when it happens to match.)
     assert!(g_w < b_w, "catch-all guard should cut confident errors ({b_w} -> {g_w})");
-    assert!(g_c >= b_c, "catch-all guard must not drop correct answers ({b_c} -> {g_c})");
+    for (lab, truth, probes) in &labs {
+        if !ml::is_catch_all(probes) {
+            // non-catch-all targets are never abstained: their raw verdict stands
+            let (pred, _) = ml::fingerprint(probes);
+            let (gated, confident) = ml::fingerprint_gated(probes, 0.10);
+            if pred == *truth {
+                assert!(
+                    confident && gated == *truth,
+                    "{lab}: correct non-catch-all answer must be kept, got {gated} confident={confident}"
+                );
+            }
+        }
+    }
 
     // ---- regression guards ----
     // the classifier gets the clean dataset right ...

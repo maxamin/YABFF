@@ -27,6 +27,34 @@ pub const FEATURE_NAMES: [&str; 18] = [
 
 pub const N_FEATURES: usize = FEATURE_NAMES.len();
 
+/// E3 — per-feature weights for the (weighted-Euclidean) nearest-centroid metric,
+/// aligned 1:1 with [`FEATURE_NAMES`]. Strong, hard-to-fake discriminators
+/// (session cookies, servlet/PHP/JSP signals, `X-Powered-By`) are weighted above
+/// noisy path-presence bits; ubiquitous signals (`robots.txt`) are weighted down.
+/// So a target with a weak accidental marker but a strong contradicting
+/// discriminator is classified by the discriminator, not the noise. A centroid
+/// still classifies to itself under any positive weights (its distance is 0).
+pub const FEATURE_WEIGHTS: [f64; N_FEATURES] = [
+    1.5, // 0  wp_json
+    2.0, // 1  wp_login
+    2.0, // 2  actuator
+    1.5, // 3  actuator_health
+    1.0, // 4  api
+    1.0, // 5  api_v1
+    1.5, // 6  swagger_openapi
+    1.0, // 7  git_head
+    0.5, // 8  robots_txt (ubiquitous -> down-weighted)
+    1.0, // 9  root_json
+    2.0, // 10 x_powered_by
+    3.0, // 11 server_java
+    3.0, // 12 cookie_jsessionid
+    3.0, // 13 cookie_wordpress
+    2.0, // 14 cookie_phpsessid
+    2.0, // 15 sig_php
+    2.5, // 16 sig_jsp
+    1.0, // 17 sig_static
+];
+
 /// `(profile_name, centroid)` for each of the four profiles. Each centroid is
 /// an [`N_FEATURES`]-dim vector in `[0, 1]`; a probed target is assigned to the
 /// nearest centroid (and these seed KMeans' initial centers).

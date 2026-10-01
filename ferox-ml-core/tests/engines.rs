@@ -4,12 +4,12 @@
 
 use ferox_ml_core::dedup::{hamming, simhash, Signature, SoftNotFoundFilter};
 use ferox_ml_core::fingerprint::{
-    self, apply_soft_404, feature_vector, has_strong_discriminator, is_catch_all, learn_soft_404,
-    present_fraction, NearestCentroid,
+    self, apply_soft_404, classify_with_weights, feature_vector, has_strong_discriminator,
+    is_catch_all, learn_soft_404, present_fraction, NearestCentroid,
 };
 use ferox_ml_core::interfaces::{Classifier, Predictor, Scheduler};
 use ferox_ml_core::markov::MarkovModel;
-use ferox_ml_core::profiles::{centroids, seed_matrix, N_FEATURES, PROBE_PATHS};
+use ferox_ml_core::profiles::{centroids, seed_matrix, FEATURE_WEIGHTS, N_FEATURES, PROBE_PATHS};
 use ferox_ml_core::ranking::Bm25;
 use ferox_ml_core::rng::Rng;
 use ferox_ml_core::scheduler;
@@ -160,6 +160,67 @@ fn e2_soft404_scoring_demotes_catchall_200s_but_keeps_real_content() {
     let empty = learn_soft_404(&[]);
     let mut probes = vec![soft("https://x/api", 200)];
     assert_eq!(apply_soft_404(&mut probes, &empty), 0);
+}
+
+#[test]
+fn e3_weighting_is_applied_and_resists_accidental_noise() {
+    let mk = |path: &str, status: u16, hdrs: &[(&str, &str)]| {
+        let mut r = ProbeResp::new(&format!("https://x/{path}"), status);
+        for (k, v) in hdrs {
+            r.headers.insert((*k).to_string(), (*v).to_string());
+        }
+        r
+    };
+    let wpcookie = &[("set-cookie", "wordpress_logged_in=1; path=/")][..];
+    let java = &[("set-cookie", "JSESSIONID=x"), ("server", "Apache-Coyote/1.1")][..];
+
+    // WordPress discriminators + accidental Spring/REST presence noise
+    let wp_noisy = vec![
+        mk("wp-json", 200, &[]),
+        mk("wp-login.php", 200, wpcookie),
+        mk("xmlrpc.php", 405, &[]),
+        mk("actuator", 200, &[]),        // noise
+        mk("actuator/health", 200, &[]), // noise
+        mk("api", 200, &[]),             // noise
+        mk("swagger-ui.html", 200, &[]), // noise
+    ];
+    assert_eq!(
+        NearestCentroid.classify(&feature_vector(&wp_noisy)).0,
+        "WORDPRESS_CMS",
+        "weighted metric keeps WordPress despite accidental Spring/REST bits"
+    );
+
+    // Spring discriminators + accidental WordPress presence noise
+    let spring_noisy = vec![
+        mk("", 200, java),
+        mk("actuator", 200, &[]),
+        mk("actuator/health", 200, &[]),
+        mk("index.jsp", 200, &[]),
+        mk("wp-json", 200, &[]),      // noise
+        mk("wp-login.php", 200, &[]), // noise
+    ];
+    assert_eq!(
+        NearestCentroid.classify(&feature_vector(&spring_noisy)).0,
+        "ENTERPRISE_JAVA_SPRING",
+        "weighted metric keeps Spring despite accidental WordPress bits"
+    );
+
+    // the weighted metric is genuinely in effect: its distance geometry differs
+    // from the plain unweighted metric (down-weighted robots, up-weighted cookies)
+    let fv = feature_vector(&wp_noisy);
+    let dist = |weights: &[f64], prof: &str| {
+        classify_with_weights(&fv, weights)
+            .1
+            .into_iter()
+            .find(|(n, _)| n == prof)
+            .unwrap()
+            .1
+    };
+    assert_ne!(
+        dist(&FEATURE_WEIGHTS, "REST_API"),
+        dist(&[1.0; 18], "REST_API"),
+        "weighting must change the distance metric"
+    );
 }
 
 #[test]
