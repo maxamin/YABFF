@@ -23,8 +23,8 @@ Each item is listed with its full signature and doc comment; composite types (st
 ## Companion documents
 
 - [feroxbuster-documentation.md](feroxbuster-documentation.md) — architecture, runtime flow, CLI flags, and feature narrative for feroxbuster (the deepest write-up; feroxbuster also has the per-item reference above).
-- [web-fuzzers-comparison.md](web-fuzzers-comparison.md) — feature/capability comparison across all tools.
-- [benchmark.md](benchmark.md) — empirical speed/accuracy benchmark.
+- [web-fuzzers-comparison.md](../analysis/web-fuzzers-comparison.md) — feature/capability comparison across all tools.
+- [benchmark.md](../analysis/benchmark.md) — empirical speed/accuracy benchmark.
 
 ## Notes on method & scope
 

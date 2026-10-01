@@ -28,7 +28,7 @@ C=np.corrcoef(Mk.T)   # feature x feature Pearson
 C=np.nan_to_num(C)
 
 # full matrix CSV
-with open("/root/YABFF/feature-correlation-matrix.csv","w") as fh:
+with open("/root/YABFF/docs/analysis/feature-correlation-matrix.csv","w") as fh:
     fh.write("feature,"+",".join(fk)+"\n")
     for i,f in enumerate(fk):
         fh.write(f+","+",".join(f"{C[i,j]:.3f}" for j in range(len(fk)))+"\n")
