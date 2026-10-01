@@ -232,33 +232,10 @@ fn confusion_matrix_and_margin_sweep() {
         field_correct as f64 / labs.len() as f64
     );
 
-    // ---- ENHANCEMENT PROTOTYPE: catch-all guard ----
-    // A catch-all / soft-404 server answers ~every probe path (high "present"
-    // fraction) with no strong, hard-to-fake discriminator (wp cookie, JSESSIONID,
-    // xmlrpc 405). Such a server's path-presence signal is noise, so abstain.
-    // This down-weights exactly the labs that path-presence fingerprinting gets
-    // wrong, while keeping targets whose header/status signals survive.
-    fn present_fraction(probes: &[ProbeResp]) -> f64 {
-        let present = probes.iter().filter(|p| p.status != 0 && p.status != 404).count();
-        if probes.is_empty() {
-            0.0
-        } else {
-            present as f64 / probes.len() as f64
-        }
-    }
-    fn has_strong_discriminator(probes: &[ProbeResp]) -> bool {
-        probes.iter().any(|p| {
-            let cookie = p.header("set-cookie").unwrap_or("").to_lowercase();
-            let wp = cookie.contains("wordpress_") || cookie.contains("wp-");
-            let jsession = cookie.contains("jsessionid");
-            let xmlrpc_405 = p.url.ends_with("xmlrpc.php") && p.status == 405;
-            wp || jsession || xmlrpc_405
-        })
-    }
-    fn catch_all_abstains(probes: &[ProbeResp]) -> bool {
-        present_fraction(probes) > 0.7 && !has_strong_discriminator(probes)
-    }
-
+    // ---- ENHANCEMENT E1: catch-all guard (shipped in the engine) ----
+    // ml::is_catch_all abstains on servers that answer ~every probe with no strong
+    // discriminator (wp cookie, JSESSIONID, xmlrpc 405). Compare the raw classifier
+    // (always commits) against the shipped guard on the real field labs.
     println!("\nEnhancement — catch-all guard, baseline vs guarded (field labs):\n");
     println!("| | confident-correct | confident-wrong | abstained |");
     println!("|---|---:|---:|---:|");
@@ -271,7 +248,7 @@ fn confusion_matrix_and_margin_sweep() {
         } else {
             b_w += 1
         }
-        if catch_all_abstains(probes) {
+        if ml::is_catch_all(probes) {
             g_a += 1;
         } else if pred == *truth {
             g_c += 1;

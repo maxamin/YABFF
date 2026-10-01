@@ -66,25 +66,33 @@ collapses on real servers for two reasons: **catch-all / soft-404 servers**
 
 ## 3. Enhancements
 
-Ranked by impact/effort. ✅ = prototyped and measured in `confusion.rs`;
+Ranked by impact/effort. ✅ = **shipped** in the engine and measured;
 ⬜ = proposed, with how to test it.
 
-### ✅ E1 — Catch-all / soft-404 guard  *(tested)*
+### ✅ E1 — Catch-all / soft-404 guard  *(shipped)*
 
-Detect a catch-all server (high fraction of "present" probes) with **no strong,
-hard-to-fake discriminator** (WordPress cookie, `JSESSIONID`, `xmlrpc.php`→405)
-and **abstain** instead of trusting path-presence. Measured on the field labs:
+Detect a catch-all server (high fraction of "present" probe paths) with **no
+strong, hard-to-fake discriminator** (WordPress cookie, `JSESSIONID`,
+`xmlrpc.php`→405) and **abstain** instead of trusting path-presence. Measured on
+the field labs:
 
 | | confident-correct | confident-wrong | abstained |
 |---|---:|---:|---:|
-| baseline | 2 | 3 | 0 |
+| baseline (raw classifier) | 2 | 3 | 0 |
 | **+ catch-all guard** | **2** | **1** | **2** |
 
 It cuts confident mistakes from 3 to 1 **without losing a single correct answer** —
 Juice Shop and DVWA (wrong guesses) become safe abstentions, while WordPress is
-kept because its cookie + `xmlrpc.php` 405 survive the catch-all. *Productionize*
-by computing the present-fraction + strong-discriminator check inside
-`fingerprint_gated`, or by feeding `dedup`'s soft-404 signatures (E2) in.
+kept because its cookie + `xmlrpc.php` 405 survive the catch-all.
+
+**Shipped** in [`ferox-ml-core/src/fingerprint.rs`](../../ferox-ml-core/src/fingerprint.rs)
+as `is_catch_all` / `present_fraction` / `has_strong_discriminator`
+(present-fraction measured against `PROBE_PATHS`, so it is correct whether or not
+404s are in the probe slice). It is wired into the fork's `fingerprint_gated`
+(abstains up front) and into feroxml's orchestrator (falls back to the generic
+profile), and guarded by tests in `confusion.rs`, `lab_fingerprint.rs`, and
+`ferox-ml-core/tests/engines.rs`. Next step is E2 — replace the global
+present-fraction with per-path soft-404 body signatures from `dedup`.
 
 ### ⬜ E2 — Per-path soft-404 scoring via SimHash bodies
 
@@ -141,6 +149,7 @@ siblings are still proposed. *Test:* learn `getUserById`, predict after
 
 The fingerprinter is accurate on clean signal (100%) and the confidence gate
 degrades safely, but real-world catch-all servers drop field accuracy to 40%.
-The catch-all guard (E1) is a cheap, measured win — it halves-plus confident
-errors with no cost to correct answers — and E2–E4 are the path to recovering the
-field cases properly.
+The catch-all guard (E1) — now **shipped** in the engine — cuts confident errors
+3→1 with no cost to correct answers, turning wrong guesses into safe abstentions;
+E2–E4 are the path to recovering the field cases properly (classifying them, not
+just abstaining).

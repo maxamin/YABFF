@@ -49,14 +49,27 @@ pub fn fingerprint(probes: &[ProbeResp]) -> (String, Vec<(String, f64)>) {
 /// Fallback profile used when a fingerprint can't be trusted.
 pub const GENERIC_PROFILE: &str = "LEGACY_STATIC";
 
+/// E1 catch-all / soft-404 guard (see [`ferox_ml_core::fingerprint::is_catch_all`]):
+/// true when the target answers nearly every probe with no strong discriminator,
+/// so its path-presence signal is noise and fingerprinting should abstain.
+pub fn is_catch_all(probes: &[ProbeResp]) -> bool {
+    ferox_ml_core::fingerprint::is_catch_all(probes)
+}
+
 /// Confidence-gated fingerprint. Returns `(profile, confident)`.
 ///
-/// Classification is only trusted when (a) at least one probe actually answered
-/// (otherwise the probe was blind — DNS/connection failures) and (b) the nearest
-/// centroid beats the runner-up by at least `margin` (otherwise the match is
-/// ambiguous). When either check fails, it falls back to [`GENERIC_PROFILE`] and
-/// reports `confident = false` so the caller can log it.
+/// Classification is only trusted when all of: (a) at least one probe answered
+/// (otherwise the probe was blind — DNS/connection failures); (b) the target is
+/// not a catch-all / soft-404 server (E1 — otherwise path-presence is noise); and
+/// (c) the nearest centroid beats the runner-up by at least `margin` (otherwise
+/// the match is ambiguous). When any check fails it falls back to
+/// [`GENERIC_PROFILE`] and reports `confident = false` so the caller can log it.
 pub fn fingerprint_gated(probes: &[ProbeResp], margin: f64) -> (String, bool) {
+    // E1: a catch-all / soft-404 server defeats path-presence fingerprinting at
+    // any margin, so abstain up front.
+    if is_catch_all(probes) {
+        return (GENERIC_PROFILE.to_string(), false);
+    }
     let (best, dists) = fingerprint(probes);
     let answered = probes.iter().filter(|p| p.status != 0).count();
     let d0 = dists.first().map(|d| d.1).unwrap_or(f64::INFINITY);

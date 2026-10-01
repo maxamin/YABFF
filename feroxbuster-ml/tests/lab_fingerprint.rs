@@ -90,20 +90,21 @@ fn sparse_or_404_labs_fall_to_static_by_a_wide_margin() {
 }
 
 #[test]
-fn catchall_labs_are_demoted_by_a_strict_margin() {
+fn catchall_labs_abstain_via_the_e1_guard() {
     let labs = load_labs();
-    // Juice Shop and DVWA answer 200 to every probe; at the default margin they
-    // still land on *a* profile, but the margin is weak. A strict margin (0.5)
-    // correctly refuses to trust them and falls back to the generic profile —
-    // the gate protecting against catch-all / soft-404 servers.
+    // Juice Shop and DVWA answer 200 to every probe with no strong discriminator,
+    // so the E1 catch-all guard abstains them to the generic profile at any margin
+    // — instead of the confident-but-wrong profile raw classification would pick.
     for lab in ["juice-shop", "dvwa"] {
-        let (lenient, c_lenient) = ml::fingerprint_gated(&labs[lab], 0.10);
-        assert!(c_lenient, "{lab}: confident at a lenient margin");
-        assert_ne!(lenient, GENERIC_PROFILE, "{lab}: lenient picks a profile");
+        assert!(ml::is_catch_all(&labs[lab]), "{lab} is a catch-all server");
 
-        let (strict, c_strict) = ml::fingerprint_gated(&labs[lab], 0.5);
-        assert!(!c_strict, "{lab}: not confident at a strict margin");
-        assert_eq!(strict, GENERIC_PROFILE, "{lab}: strict falls back to generic");
+        let (profile, confident) = ml::fingerprint_gated(&labs[lab], 0.10);
+        assert!(!confident, "{lab}: catch-all guard abstains even at a lenient margin");
+        assert_eq!(profile, GENERIC_PROFILE, "{lab}: falls back to generic");
+
+        // raw (unguarded) classification would have committed to a specific profile
+        let (raw, _) = ml::fingerprint(&labs[lab]);
+        assert_ne!(raw, GENERIC_PROFILE, "{lab}: raw classifier picks a specific profile");
     }
 }
 

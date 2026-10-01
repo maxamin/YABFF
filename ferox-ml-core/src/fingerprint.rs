@@ -12,7 +12,7 @@
 
 use crate::ProbeResp;
 use crate::interfaces::Classifier;
-use crate::profiles::{centroids, N_FEATURES};
+use crate::profiles::{centroids, N_FEATURES, PROBE_PATHS};
 use crate::tokenize::path_segments;
 
 /// Normalize a URL to its slash-joined path segments, lowercased.
@@ -116,6 +116,49 @@ pub fn feature_vector(responses: &[ProbeResp]) -> [f64; N_FEATURES] {
 
 fn euclidean(a: &[f64], b: &[f64]) -> f64 {
     a.iter().zip(b).map(|(x, y)| (x - y) * (x - y)).sum::<f64>().sqrt()
+}
+
+/// A server is treated as a catch-all / soft-404 responder when it answers
+/// (non-404) to more than this fraction of the discriminating probe paths.
+pub const CATCH_ALL_PRESENT_FRACTION: f64 = 0.7;
+
+/// Fraction of the discriminating probe paths that "answered" — a non-zero,
+/// non-404 status. Measured against the known probe-path count
+/// ([`PROBE_PATHS`]), not the length of `probes`, so it is correct whether the
+/// caller includes 404 responses in the slice (the fork does) or omits them (a
+/// feroxbuster NDJSON stream may). Capped at 1.0 for callers that add extra
+/// probes (e.g. the root path).
+pub fn present_fraction(probes: &[ProbeResp]) -> f64 {
+    let total = PROBE_PATHS.len().max(1);
+    let present = probes
+        .iter()
+        .filter(|p| p.status != 0 && p.status != 404)
+        .count();
+    (present as f64 / total as f64).min(1.0)
+}
+
+/// Whether any probe carries a strong, hard-to-fake framework discriminator that
+/// survives a catch-all: a WordPress or servlet session cookie, or `xmlrpc.php`
+/// answering 405 (WordPress's method-not-allowed, which a catch-all 200 won't
+/// produce).
+pub fn has_strong_discriminator(probes: &[ProbeResp]) -> bool {
+    probes.iter().any(|p| {
+        let cookie = p.header("set-cookie").unwrap_or_default().to_lowercase();
+        let wp = cookie.contains("wordpress_") || cookie.contains("wp-");
+        let jsession = cookie.contains("jsessionid");
+        let xmlrpc_405 = p.url.to_lowercase().ends_with("xmlrpc.php") && p.status == 405;
+        wp || jsession || xmlrpc_405
+    })
+}
+
+/// E1 — catch-all / soft-404 guard. True when the target answers almost every
+/// probe path (so path-presence features are noise) **and** exposes no strong
+/// discriminator to classify on. Callers should abstain — fall back to a generic
+/// profile — rather than trust a confident-but-wrong fingerprint. Validated on
+/// the jsintel labs: it demotes the Juice Shop / DVWA catch-alls while leaving
+/// WordPress (whose cookie + `xmlrpc.php` 405 survive) classified.
+pub fn is_catch_all(probes: &[ProbeResp]) -> bool {
+    present_fraction(probes) > CATCH_ALL_PRESENT_FRACTION && !has_strong_discriminator(probes)
 }
 
 /// Nearest-centroid classifier over the four profile centroids.

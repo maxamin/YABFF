@@ -93,10 +93,17 @@ impl Campaign {
             extract_links: false,
         })?;
 
-        let features = feature_vector(&to_probe_views(&probe_resps));
+        let probe_views = to_probe_views(&probe_resps);
+        let features = feature_vector(&probe_views);
         let classifier: Box<dyn Classifier> =
             fingerprint::build(&self.cfg.classifier, self.cfg.seed);
-        let (profile, distances) = classifier.classify(&features);
+        let (mut profile, distances) = classifier.classify(&features);
+        // E1 catch-all / soft-404 guard: a server that answers nearly every probe
+        // with no strong discriminator defeats path-presence fingerprinting, so
+        // abstain to the generic profile rather than seed a confident-but-wrong one.
+        if fingerprint::is_catch_all(&probe_views) {
+            profile = "LEGACY_STATIC".to_string();
+        }
 
         // ---- learn soft-404 signatures from the random probes ----
         let mut filter = SoftNotFoundFilter::new();

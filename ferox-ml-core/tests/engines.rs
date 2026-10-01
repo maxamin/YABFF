@@ -3,7 +3,9 @@
 //! focused unit tests inside each module.
 
 use ferox_ml_core::dedup::{hamming, simhash, Signature, SoftNotFoundFilter};
-use ferox_ml_core::fingerprint::{self, feature_vector, NearestCentroid};
+use ferox_ml_core::fingerprint::{
+    self, feature_vector, has_strong_discriminator, is_catch_all, present_fraction, NearestCentroid,
+};
 use ferox_ml_core::interfaces::{Classifier, Predictor, Scheduler};
 use ferox_ml_core::markov::MarkovModel;
 use ferox_ml_core::profiles::{centroids, seed_matrix, N_FEATURES, PROBE_PATHS};
@@ -79,6 +81,42 @@ fn empty_or_all_404_probes_are_static() {
         ProbeResp::new("https://x.test/wp-json", 404),
     ];
     assert_eq!(NearestCentroid.classify(&feature_vector(&all404)).0, "LEGACY_STATIC");
+}
+
+#[test]
+fn catch_all_guard_fires_only_without_a_strong_discriminator() {
+    // a catch-all server: answers 200 to (almost) every probe path, no cookie/405
+    let catchall: Vec<ProbeResp> = PROBE_PATHS
+        .iter()
+        .map(|p| ProbeResp::new(&format!("https://x/{p}"), 200))
+        .collect();
+    assert!(present_fraction(&catchall) > 0.7);
+    assert!(!has_strong_discriminator(&catchall));
+    assert!(is_catch_all(&catchall), "catch-all with no discriminator -> guard fires");
+
+    // same high-presence server, but WordPress's xmlrpc 405 survives the catch-all
+    let mut with_disc = catchall.clone();
+    with_disc.push(ProbeResp::new("https://x/xmlrpc.php", 405));
+    assert!(has_strong_discriminator(&with_disc));
+    assert!(!is_catch_all(&with_disc), "strong discriminator defeats the guard");
+
+    // a normal server: only a couple of probe paths present (the rest 404)
+    let normal: Vec<ProbeResp> = PROBE_PATHS
+        .iter()
+        .map(|p| {
+            let status = if *p == "api" || *p == "api/v1" { 200 } else { 404 };
+            ProbeResp::new(&format!("https://x/{p}"), status)
+        })
+        .collect();
+    assert!(present_fraction(&normal) <= 0.7);
+    assert!(!is_catch_all(&normal));
+
+    // a session cookie also counts as a strong discriminator
+    let mut jsession = catchall.clone();
+    let mut r = ProbeResp::new("https://x/", 200);
+    r.headers.insert("set-cookie".into(), "JSESSIONID=abc; Path=/".into());
+    jsession.push(r);
+    assert!(!is_catch_all(&jsession));
 }
 
 #[test]
