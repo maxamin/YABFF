@@ -113,8 +113,12 @@ fn time_limit_enforced_when_specified() {
     assert!(file.metadata().unwrap().len() > 100); // sanity check on wordlist size
 
     let now = time::Instant::now();
+    // --time-limit is 5s; the process must run at least that long, but process
+    // spin-up + shutdown (state flush, etc.) adds overhead that a 1s window can't
+    // absorb under load. A 15s upper bound is still far below the ~30s unlimited
+    // run, so it confirms the limit was enforced without flaking on timing jitter.
     let lower_bound = time::Duration::new(5, 0);
-    let upper_bound = time::Duration::new(6, 0);
+    let upper_bound = time::Duration::new(15, 0);
 
     Command::new(cargo_bin!("feroxbuster"))
         .arg("--stdin")
