@@ -119,6 +119,7 @@ set edit:completion:arg-completer[feroxbuster] = {|@words|
             cand --scan-dir-listings 'Force scans to recurse into directory listings'
             cand --ml 'Enable the native ML layer: fingerprint the target and inject Markov-predicted paths into the scan, learning online'
             cand --no-ml-rank 'Disable BM25 re-ranking of ML predictions against the discovered-path corpus'
+            cand --ml-loop 'Run the adaptive bounded-scan feedback loop (budgeted Thompson-scheduled orchestrator) instead of a single scan'
             cand -v 'Increase verbosity level (use -vv or more for greater effect. [CAUTION] 4 -v''s is probably too much)'
             cand --verbosity 'Increase verbosity level (use -vv or more for greater effect. [CAUTION] 4 -v''s is probably too much)'
             cand --silent 'Only print URLs (or JSON w/ --json) + turn off logging (good for piping a list of urls to other commands)'

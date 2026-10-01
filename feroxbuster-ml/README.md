@@ -96,6 +96,7 @@ feroxbuster --ml-model ./model.json -u https://target.test -w common.txt
 | `--ml-predictions <n>` | Base predictions injected per directory (default `25`, scaled 25–100% by the bandit). |
 | `--ml-scheduler <name>` | Budget bandit: `thompson` (default), `ucb1`, or `round_robin`. |
 | `--no-ml-rank` | Disable BM25 re-ranking of predictions. |
+| `--ml-loop` | Run the **adaptive bounded-scan feedback loop** (the shared `ferox-ml-core` orchestrator: budgeted, Thompson-scheduled rounds) instead of a single scan — the same engine as the standalone `feroxml`, hosted in this binary. It self-drives bounded sub-scans of this binary. |
 
 These (plus the advanced `ml_soft404` / `ml_fp_margin` knobs) can also be set in
 [`ferox-config.toml`](ferox-config.toml.example).

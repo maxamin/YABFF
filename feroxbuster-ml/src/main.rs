@@ -778,6 +778,66 @@ async fn update_app(
     Ok(status)
 }
 
+/// Run the shared `ferox-ml-core` orchestrator (the adaptive, budgeted
+/// bounded-scan feedback loop) against the target, self-driving this binary for
+/// each bounded sub-scan. This is feroxml's loop hosted inside the feroxbuster
+/// binary via the same runner-agnostic `Campaign` both tools now share.
+fn run_ml_loop(config: &Configuration) -> Result<()> {
+    use ferox_ml_core::config::Config as MlConfig;
+    use ferox_ml_core::ferox::RealRunner;
+    use ferox_ml_core::orchestrator::Campaign;
+
+    if config.target_url.is_empty() {
+        anyhow::bail!("--ml-loop requires a target URL (-u/--url)");
+    }
+
+    let self_bin = std::env::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "feroxbuster".to_string());
+
+    let mut cfg = MlConfig {
+        ferox_binary: self_bin,
+        threads: config.threads,
+        rate_limit: config.rate_limit,
+        tls_verify: !config.insecure,
+        scheduler: config.ml_scheduler.clone(),
+        markov_max_order: config.ml_order,
+        top_n: config.ml_predictions,
+        model_path: config.ml_model.clone(),
+        extensions: config.extensions.clone(),
+        state_dir: std::env::temp_dir().to_string_lossy().into_owned(),
+        ..MlConfig::default()
+    };
+    if let Some(wl) = config.wordlist.first() {
+        cfg.seed_wordlist = wl.clone();
+        cfg.seed_per_round = 10;
+    }
+
+    log::info!(
+        "ml-loop: driving '{}' (scheduler={}, rounds<= {})",
+        cfg.ferox_binary,
+        cfg.scheduler,
+        cfg.max_rounds
+    );
+
+    let runner = RealRunner { cfg: cfg.clone() };
+    let summary = Campaign::new(cfg, Box::new(runner)).run(&config.target_url)?;
+
+    println!("=== feroxbuster --ml-loop summary ===");
+    println!("target           : {}", summary.target);
+    println!("profile          : {}", summary.profile);
+    println!("rounds           : {}", summary.rounds);
+    println!("requests used    : {}", summary.requests_used);
+    println!("resources found  : {}", summary.discovered.len());
+    println!("predicted hits   : {}", summary.predicted_hits);
+    println!("filtered soft404 : {}", summary.filtered_soft404);
+    println!("out-of-scope drop: {}", summary.dropped_out_of_scope);
+    for (url, status) in &summary.discovered {
+        println!("  {status} {url}");
+    }
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let config = Arc::new(Configuration::new().with_context(|| "Could not create Configuration")?);
 
@@ -788,6 +848,13 @@ fn main() -> Result<()> {
     ) {
         // don't log on --silent
         logger::initialize(config.clone())?;
+    }
+
+    // --ml-loop: run the shared ferox-ml-core orchestrator (the adaptive
+    // bounded-scan feedback loop), self-driving this same binary for each bounded
+    // sub-scan, instead of the normal single recursive scan.
+    if config.ml_loop {
+        return run_ml_loop(&config);
     }
 
     // this function uses rlimit, which is not supported on windows

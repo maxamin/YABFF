@@ -68,14 +68,18 @@ honestly with a confusion matrix.
 ## The two forms
 
 Both are Cargo workspace members and both depend on the shared engine crate
-[`ferox-ml-core/`](ferox-ml-core/), so a fix or a new algorithm lands once.
+[`ferox-ml-core/`](ferox-ml-core/) — which now holds **both** the ML engines
+*and* the adaptive orchestration loop (runner-agnostic, behind a `FeroxRunner`
+trait). So a fix or a new algorithm lands once, and the loop is no longer unique
+to `feroxml`: the feroxbuster binary can run it via `--ml-loop`, and `feroxml` is a
+thin CLI over the same `Campaign`.
 
-| | [`feroxbuster-ml/`](feroxbuster-ml/) — the fork | [`feroxml/`](feroxml/) — the orchestrator |
+| | [`feroxbuster-ml/`](feroxbuster-ml/) — the fork | [`feroxml/`](feroxml/) — the orchestrator CLI |
 |---|---|---|
-| **What it is** | feroxbuster with the ML layer compiled **in-crate** | A tool that **drives** the stock `feroxbuster` binary |
-| **Binary** | `feroxbuster` (with `--ml`) | `feroxml` |
-| **Use it when** | You want one binary and feroxbuster's full feature set | You want the bounded-scan feedback loop + explicit learn/scan modes around an unmodified feroxbuster |
-| **Prediction model** | Per-directory injection into each recursive scan | Bounded scans in a scheduler-driven loop |
+| **What it is** | feroxbuster with the ML layer compiled **in-crate** | A thin CLI over the shared `Campaign` that drives a stock `feroxbuster` |
+| **Binary** | `feroxbuster` — `--ml` (in-pass) *or* `--ml-loop` (budgeted loop) | `feroxml` (learn / scan) |
+| **Use it when** | You want one binary with both the in-pass layer and the loop | You want the loop around an *unmodified* feroxbuster (incl. the official release), or the `--learn` workflow |
+| **Prediction model** | Per-directory injection (`--ml`) or the bounded-scan loop (`--ml-loop`) | Bounded scans in a scheduler-driven loop |
 | **Learns across runs** | `--ml-model <path>` | `--learn` → `--model <path>` |
 | **Docs** | [feroxbuster-ml/README.md](feroxbuster-ml/README.md) | [feroxml/README.md](feroxml/README.md) |
 

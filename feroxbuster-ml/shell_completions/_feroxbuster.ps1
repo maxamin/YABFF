@@ -122,6 +122,7 @@ Register-ArgumentCompleter -Native -CommandName 'feroxbuster' -ScriptBlock {
             [CompletionResult]::new('--scan-dir-listings', '--scan-dir-listings', [CompletionResultType]::ParameterName, 'Force scans to recurse into directory listings')
             [CompletionResult]::new('--ml', '--ml', [CompletionResultType]::ParameterName, 'Enable the native ML layer: fingerprint the target and inject Markov-predicted paths into the scan, learning online')
             [CompletionResult]::new('--no-ml-rank', '--no-ml-rank', [CompletionResultType]::ParameterName, 'Disable BM25 re-ranking of ML predictions against the discovered-path corpus')
+            [CompletionResult]::new('--ml-loop', '--ml-loop', [CompletionResultType]::ParameterName, 'Run the adaptive bounded-scan feedback loop (budgeted Thompson-scheduled orchestrator) instead of a single scan')
             [CompletionResult]::new('-v', '-v', [CompletionResultType]::ParameterName, 'Increase verbosity level (use -vv or more for greater effect. [CAUTION] 4 -v''s is probably too much)')
             [CompletionResult]::new('--verbosity', '--verbosity', [CompletionResultType]::ParameterName, 'Increase verbosity level (use -vv or more for greater effect. [CAUTION] 4 -v''s is probably too much)')
             [CompletionResult]::new('--silent', '--silent', [CompletionResultType]::ParameterName, 'Only print URLs (or JSON w/ --json) + turn off logging (good for piping a list of urls to other commands)')

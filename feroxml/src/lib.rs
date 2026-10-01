@@ -25,12 +25,6 @@
 // re-export them under their historical paths so the rest of feroxml
 // (`crate::markov`, `crate::fingerprint`, `crate::PROFILES`, ...) is unchanged.
 pub use ferox_ml_core::{
-    dedup, fingerprint, interfaces, markov, profiles, ranking, rng, scheduler, tokenize, ProbeResp,
-    PROFILES,
+    config, dedup, ferox, fingerprint, interfaces, markov, orchestrator, profiles, ranking, rng,
+    scheduler, scope, tokenize, wordlist, ProbeResp, PROFILES,
 };
-
-pub mod config;
-pub mod ferox;
-pub mod orchestrator;
-pub mod scope;
-pub mod wordlist;

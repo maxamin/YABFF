@@ -29,6 +29,15 @@ pub mod rng;
 pub mod scheduler;
 pub mod tokenize;
 
+// The adaptive orchestration layer: a runner-agnostic budgeted feedback loop that
+// drives a `FeroxRunner` (subprocess today; an in-process runner can implement the
+// same trait). Shared so either tool can host the loop.
+pub mod config;
+pub mod ferox;
+pub mod orchestrator;
+pub mod scope;
+pub mod wordlist;
+
 pub use profiles::PROFILES;
 
 /// Lightweight view of a probe/scan response for fingerprinting and learning.

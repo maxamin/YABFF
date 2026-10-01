@@ -16,6 +16,7 @@ the algorithms live in exactly one place.
 | [`dedup`](src/dedup.rs) | 64-bit SimHash + coarse response signatures for soft-404 / near-duplicate detection. |
 | [`tokenize`](src/tokenize.rs), [`rng`](src/rng.rs) | Path/subword tokenizers and a dependency-free deterministic RNG. |
 | [`interfaces`](src/interfaces.rs) | The `Classifier` / `Predictor` / `Scheduler` traits — swap in a new algorithm without touching callers. |
+| [`orchestrator`](src/orchestrator.rs) + [`ferox`](src/ferox.rs) / [`config`](src/config.rs) / [`scope`](src/scope.rs) / [`wordlist`](src/wordlist.rs) | The **runner-agnostic adaptive loop**: a budgeted, Thompson-scheduled sequence of bounded scans driving any `FeroxRunner` (subprocess `RealRunner` today; an in-process runner implements the same trait). Shared so either tool can host the loop — `feroxml` is a thin CLI over it, and the feroxbuster binary runs it via `--ml-loop`. |
 
 Engines consume [`ProbeResp`](src/lib.rs) (a `{ url, status, headers }` view), so
 they never depend on either tool's native response type. Each tool bridges its own

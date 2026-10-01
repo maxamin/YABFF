@@ -68,6 +68,7 @@ complete -c feroxbuster -s g -l collect-words -d 'Automatically discover importa
 complete -c feroxbuster -l scan-dir-listings -d 'Force scans to recurse into directory listings'
 complete -c feroxbuster -l ml -d 'Enable the native ML layer: fingerprint the target and inject Markov-predicted paths into the scan, learning online'
 complete -c feroxbuster -l no-ml-rank -d 'Disable BM25 re-ranking of ML predictions against the discovered-path corpus'
+complete -c feroxbuster -l ml-loop -d 'Run the adaptive bounded-scan feedback loop (budgeted Thompson-scheduled orchestrator) instead of a single scan'
 complete -c feroxbuster -s v -l verbosity -d 'Increase verbosity level (use -vv or more for greater effect. [CAUTION] 4 -v\'s is probably too much)'
 complete -c feroxbuster -l silent -d 'Only print URLs (or JSON w/ --json) + turn off logging (good for piping a list of urls to other commands)'
 complete -c feroxbuster -s q -l quiet -d 'Hide progress bars and banner (good for tmux windows w/ notifications)'

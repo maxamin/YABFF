@@ -22,6 +22,12 @@ of fixed:
 > and scope-checks every generated URL: an out-of-scope host is dropped and
 > logged. Only point it at systems you own or are explicitly permitted to test.
 
+> **Shared engine + loop.** Both the ML engines and this adaptive loop
+> (`Campaign`) live in the [`ferox-ml-core`](../ferox-ml-core/) crate behind a
+> runner-agnostic `FeroxRunner` trait. `feroxml` is a thin CLI over it that drives
+> an unmodified `feroxbuster` as a subprocess; the feroxbuster fork can run the
+> very same loop in-binary via `feroxbuster --ml-loop`.
+
 ## How it works
 
 feroxbuster cannot accept new wordlist entries into a *running* scan, so feroxml

@@ -356,6 +356,11 @@ pub struct Configuration {
     #[serde(default)]
     pub ml: bool,
 
+    /// run the adaptive bounded-scan feedback loop (the ferox-ml-core orchestrator)
+    /// instead of a single scan
+    #[serde(default)]
+    pub ml_loop: bool,
+
     /// path to a learned ML model, loaded at start and updated as paths are found
     #[serde(default)]
     pub ml_model: String,
@@ -453,6 +458,7 @@ impl Default for Configuration {
             json: false,
             scan_dir_listings: false,
             ml: false,
+            ml_loop: false,
             ml_model: String::new(),
             ml_order: ml_order(),
             ml_predictions: ml_predictions(),
@@ -1037,6 +1043,9 @@ impl Configuration {
         if came_from_cli!(args, "ml") {
             config.ml = true;
         }
+        if came_from_cli!(args, "ml_loop") {
+            config.ml_loop = true;
+        }
         update_config_if_present!(&mut config.ml_model, args, "ml_model", String);
         if !config.ml_model.is_empty() {
             config.ml = true; // --ml-model implies --ml
@@ -1455,6 +1464,7 @@ impl Configuration {
         update_if_not_default!(&mut conf.dont_filter, new.dont_filter, false);
         update_if_not_default!(&mut conf.scan_dir_listings, new.scan_dir_listings, false);
         update_if_not_default!(&mut conf.ml, new.ml, false);
+        update_if_not_default!(&mut conf.ml_loop, new.ml_loop, false);
         update_if_not_default!(&mut conf.ml_model, new.ml_model, String::new());
         update_if_not_default!(&mut conf.ml_order, new.ml_order, ml_order());
         update_if_not_default!(&mut conf.ml_predictions, new.ml_predictions, ml_predictions());

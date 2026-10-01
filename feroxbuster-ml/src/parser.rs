@@ -685,6 +685,12 @@ pub fn initialize() -> Command {
                 .num_args(0)
                 .help_heading("Scan settings")
                 .help("Disable BM25 re-ranking of ML predictions against the discovered-path corpus")
+        ).arg(
+            Arg::new("ml_loop")
+                .long("ml-loop")
+                .num_args(0)
+                .help_heading("Scan settings")
+                .help("Run the adaptive bounded-scan feedback loop (budgeted Thompson-scheduled orchestrator) instead of a single scan")
         );
 
     /////////////////////////////////////////////////////////////////////
