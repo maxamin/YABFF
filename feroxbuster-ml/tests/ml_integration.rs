@@ -28,7 +28,7 @@ fn fingerprint_classifies_rest_api() {
     ];
     let (profile, dists) = ml::fingerprint(&probes);
     assert_eq!(profile, "REST_API", "dists={dists:?}");
-    assert_eq!(dists.len(), 4, "distances to all four profiles");
+    assert_eq!(dists.len(), ml::PROFILES.len(), "distances to every profile");
 }
 
 #[test]

@@ -9,7 +9,7 @@ the algorithms live in exactly one place.
 
 | Module | What it does |
 |---|---|
-| [`fingerprint`](src/fingerprint.rs) + [`profiles`](src/profiles.rs) | K-Means / nearest-centroid classification of a target into one of four framework profiles (`REST_API`, `ENTERPRISE_JAVA_SPRING`, `WORDPRESS_CMS`, `LEGACY_STATIC`) from a bounded probe, with per-profile seed Markov matrices. |
+| [`fingerprint`](src/fingerprint.rs) + [`profiles`](src/profiles.rs) | K-Means / nearest-centroid classification of a target into one of seven framework profiles (`REST_API`, `ENTERPRISE_JAVA_SPRING`, `WORDPRESS_CMS`, `LEGACY_STATIC`, `PHP_GENERIC`, `NODE_SPA`, `DJANGO`) from a bounded probe, with per-profile seed Markov matrices, a weighted-Euclidean metric (E3), and a catch-all / per-path soft-404 guard (E1/E2). |
 | [`markov`](src/markov.rs) | Variable-order Markov / PPM path predictor; seeded per profile, learns online, JSON-serializable, mergeable across runs. |
 | [`scheduler`](src/scheduler.rs) | `Thompson` / `Ucb1` / `RoundRobin` bandits with a `value(arm)` estimate used to scale per-directory budgets. |
 | [`ranking`](src/ranking.rs) | BM25 re-ranking of candidates against the corpus of discovered path segments. |

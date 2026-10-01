@@ -4,7 +4,7 @@
 
 /// Ordered names of the features in every target feature vector. The centroids
 /// below and the fingerprint module's vectorizer use this exact order.
-pub const FEATURE_NAMES: [&str; 18] = [
+pub const FEATURE_NAMES: [&str; 20] = [
     "wp_json",           // 0  /wp-json present
     "wp_login",          // 1  /wp-login.php present
     "actuator",          // 2  /actuator present
@@ -23,6 +23,8 @@ pub const FEATURE_NAMES: [&str; 18] = [
     "sig_php",           // 15 PHP signal (X-Powered-By: PHP, .php)
     "sig_jsp",           // 16 JSP/servlet signal
     "sig_static",        // 17 looks like a static/legacy site
+    "sig_spa",           // 18 SPA build output (manifest.webmanifest, /_next, /assets)
+    "sig_django",        // 19 Django signal (csrftoken cookie, /static/admin)
 ];
 
 pub const N_FEATURES: usize = FEATURE_NAMES.len();
@@ -53,32 +55,50 @@ pub const FEATURE_WEIGHTS: [f64; N_FEATURES] = [
     2.0, // 15 sig_php
     2.5, // 16 sig_jsp
     1.0, // 17 sig_static
+    1.5, // 18 sig_spa
+    2.0, // 19 sig_django
 ];
 
 /// `(profile_name, centroid)` for each of the four profiles. Each centroid is
 /// an [`N_FEATURES`]-dim vector in `[0, 1]`; a probed target is assigned to the
 /// nearest centroid (and these seed KMeans' initial centers).
 pub fn centroids() -> Vec<(&'static str, [f64; N_FEATURES])> {
+    // indices 0..=17 as before; 18 = sig_spa, 19 = sig_django
     vec![
         (
             "REST_API",
             // api/apiv1/swagger/json-heavy, no wp, no servlet
-            [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.9, 0.1, 0.5, 1.0, 0.4, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.9, 0.1, 0.5, 1.0, 0.4, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0],
         ),
         (
             "ENTERPRISE_JAVA_SPRING",
             // actuator + servlet cookies + jsp signal
-            [0.0, 0.0, 1.0, 1.0, 0.6, 0.5, 0.6, 0.1, 0.4, 0.4, 0.3, 1.0, 1.0, 0.0, 0.0, 0.0, 0.9, 0.1],
+            [0.0, 0.0, 1.0, 1.0, 0.6, 0.5, 0.6, 0.1, 0.4, 0.4, 0.3, 1.0, 1.0, 0.0, 0.0, 0.0, 0.9, 0.1, 0.0, 0.0],
         ),
         (
             "WORDPRESS_CMS",
             // wp-json/wp-login + wp cookie + php signal
-            [1.0, 1.0, 0.0, 0.0, 0.2, 0.1, 0.1, 0.1, 0.7, 0.0, 0.7, 0.0, 0.0, 1.0, 0.5, 0.9, 0.0, 0.1],
+            [1.0, 1.0, 0.0, 0.0, 0.2, 0.1, 0.1, 0.1, 0.7, 0.0, 0.7, 0.0, 0.0, 1.0, 0.5, 0.9, 0.0, 0.1, 0.0, 0.0],
         ),
         (
             "LEGACY_STATIC",
             // almost nothing dynamic; static signal high
-            [0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.1, 0.6, 0.0, 0.1, 0.0, 0.0, 0.0, 0.2, 0.2, 0.0, 1.0],
+            [0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.1, 0.6, 0.0, 0.1, 0.0, 0.0, 0.0, 0.2, 0.2, 0.0, 1.0, 0.0, 0.0],
+        ),
+        (
+            "PHP_GENERIC",
+            // PHP app that is NOT WordPress: PHP signals + PHPSESSID, no wp markers
+            [0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.1, 0.5, 0.0, 0.8, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.3, 0.0, 0.0],
+        ),
+        (
+            "NODE_SPA",
+            // single-page app: SPA build output, maybe a REST backend, HTML root
+            [0.0, 0.0, 0.0, 0.0, 0.4, 0.2, 0.1, 0.1, 0.3, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 1.0, 0.0],
+        ),
+        (
+            "DJANGO",
+            // Django: csrftoken/static-admin signal, often a DRF api, no x-powered-by
+            [0.0, 0.0, 0.0, 0.0, 0.3, 0.1, 0.1, 0.1, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 0.0, 1.0],
         ),
     ]
 }
@@ -126,13 +146,34 @@ pub fn seed_matrix(profile: &str) -> Vec<Row> {
             ("js", &[("main.js", 0.4), ("app.js", 0.3), ("jquery.js", 0.3)]),
             ("cgi-bin", &[("test.cgi", 0.4), ("admin.cgi", 0.3), ("status.cgi", 0.3)]),
         ],
+        "PHP_GENERIC" => vec![
+            ("", &[("index.php", 0.25), ("admin", 0.2), ("login.php", 0.12), ("config.php", 0.1), ("uploads", 0.1), ("includes", 0.1), ("api", 0.08), ("phpinfo.php", 0.05)]),
+            ("admin", &[("index.php", 0.3), ("login.php", 0.25), ("config.php", 0.2), ("dashboard.php", 0.15), ("users.php", 0.1)]),
+            ("includes", &[("config.php", 0.4), ("db.php", 0.3), ("functions.php", 0.3)]),
+            ("uploads", &[("files", 0.4), ("images", 0.35), ("tmp", 0.25)]),
+            ("api", &[("v1", 0.4), ("login.php", 0.3), ("user.php", 0.3)]),
+        ],
+        "NODE_SPA" => vec![
+            ("", &[("api", 0.25), ("static", 0.18), ("assets", 0.18), ("_next", 0.12), ("manifest.webmanifest", 0.1), ("graphql", 0.1), ("favicon.ico", 0.07)]),
+            ("api", &[("v1", 0.3), ("graphql", 0.2), ("users", 0.2), ("auth", 0.2), ("health", 0.1)]),
+            ("assets", &[("index.js", 0.35), ("index.css", 0.3), ("vendor.js", 0.2), ("main.js", 0.15)]),
+            ("_next", &[("static", 0.6), ("data", 0.25), ("image", 0.15)]),
+            ("static", &[("js", 0.35), ("css", 0.35), ("media", 0.3)]),
+        ],
+        "DJANGO" => vec![
+            ("", &[("admin", 0.25), ("api", 0.2), ("static", 0.15), ("accounts", 0.12), ("media", 0.1), ("graphql", 0.08), ("__debug__", 0.1)]),
+            ("admin", &[("login", 0.4), ("", 0.2), ("auth", 0.2), ("jsi18n", 0.2)]),
+            ("api", &[("v1", 0.35), ("auth", 0.2), ("users", 0.2), ("token", 0.15), ("schema", 0.1)]),
+            ("accounts", &[("login", 0.4), ("logout", 0.25), ("password_reset", 0.2), ("register", 0.15)]),
+            ("static", &[("admin", 0.5), ("rest_framework", 0.3), ("css", 0.2)]),
+        ],
         _ => vec![],
     }
 }
 
 /// Discriminating paths the Phase-1 probe requests. Mapping of which of these
 /// map to which feature index lives in the fingerprint module.
-pub const PROBE_PATHS: [&str; 18] = [
+pub const PROBE_PATHS: [&str; 22] = [
     "wp-json",
     "wp-login.php",
     "actuator",
@@ -151,12 +192,19 @@ pub const PROBE_PATHS: [&str; 18] = [
     "index.php",
     "index.jsp",
     "server-status",
+    "manifest.webmanifest", // SPA / PWA
+    "_next",                // Next.js build output
+    "assets",               // bundled SPA assets
+    "static/admin",         // Django admin static tree
 ];
 
-/// The four framework profiles the fingerprinting engine can assign.
-pub const PROFILES: [&str; 4] = [
+/// The framework profiles the fingerprinting engine can assign.
+pub const PROFILES: [&str; 7] = [
     "REST_API",
     "ENTERPRISE_JAVA_SPRING",
     "WORDPRESS_CMS",
     "LEGACY_STATIC",
+    "PHP_GENERIC",
+    "NODE_SPA",
+    "DJANGO",
 ];

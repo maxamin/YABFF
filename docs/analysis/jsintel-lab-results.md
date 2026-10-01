@@ -13,31 +13,32 @@ deterministic and offline. Re-capture with the probe script if the labs change.
 
 ## Fingerprint verdicts (captured 2026-10-01)
 
-| Lab | Stack | Probe behavior | Fingerprint (margin 0.10) | Margin |
+Verdicts are the **current** engine (7 profiles, E3-weighted metric, E4 profiles);
+the parenthetical shows the original 4-profile / unweighted result for contrast.
+
+| Lab | Stack | Probe behavior | Fingerprint (raw) | Gated (margin 0.10) |
 |---|---|---|---|---|
-| WordPress | PHP / WP | catch-all 200, but keeps `wordpress_test_cookie`, `xmlrpc.php`→405, `x-powered-by: PHP` | **`WORDPRESS_CMS`** ✓ | 0.347 |
-| WebGoat | Java | 404 on all probe paths (app lives under `/WebGoat/`) | `LEGACY_STATIC` | 1.554 |
-| Django | Python | only `/` answers; rest 404 | `LEGACY_STATIC` | 1.554 |
-| Juice Shop | Node/Angular SPA | **catch-all 200** for every path; `/api`,`/rest` → 500 | `ENTERPRISE_JAVA_SPRING` | 0.167 |
-| DVWA | PHP | **catch-all 200** for every path | `WORDPRESS_CMS` | 0.158 |
+| WordPress | PHP / WP | catch-all 200, but keeps `wordpress_test_cookie`, `xmlrpc.php`→405, `x-powered-by: PHP` | **`WORDPRESS_CMS`** ✓ | `WORDPRESS_CMS` (kept — strong discriminator) |
+| Django | Python | only `/` answers, but it sets a `csrftoken` cookie | **`DJANGO`** ✓ (was `LEGACY_STATIC`) | `DJANGO` |
+| WebGoat | Java | 404 on all probe paths (app lives under `/WebGoat/`) | `LEGACY_STATIC` | `LEGACY_STATIC` (no signal) |
+| Juice Shop | Node/Angular SPA | **catch-all 200** for every path; `/api`,`/rest` → 500 | `REST_API` (was `ENTERPRISE_JAVA_SPRING`) | **abstained** (catch-all) |
+| DVWA | PHP | **catch-all 200** for every path | `WORDPRESS_CMS` | **abstained** (catch-all) |
 
 ## What this shows
 
-- **It gets the clean signal right.** WordPress is identified correctly despite
-  the server answering 200 to unrelated probe paths — the WP cookie, the
-  `xmlrpc.php` 405, and the PHP header carry enough signal, and it clears the
-  margin comfortably (0.347).
-- **It degrades sanely on empty signal.** WebGoat and Django expose nothing on the
-  probe paths, so with no dynamic markers they fall to `LEGACY_STATIC` by a wide,
-  unambiguous margin (1.554) rather than guessing.
-- **Catch-all servers are the real limitation — and the gate is why it's safe.**
+- **It gets the signal-bearing labs right.** WordPress (WP cookie + `xmlrpc.php`
+  405 + PHP header) and Django (its root `csrftoken` cookie, keyed by the E4
+  `DJANGO` profile) are both identified correctly despite answering 200/404 noise
+  on unrelated paths.
+- **It degrades sanely on empty signal.** WebGoat exposes nothing on the probe
+  paths (its app is under `/WebGoat/`), so with no markers it falls to
+  `LEGACY_STATIC` by a clear margin rather than guessing.
+- **Catch-all servers are the real limitation — and E1/E2 are why it's safe.**
   Juice Shop and DVWA return 200 for *every* path, so path-presence
-  fingerprinting is driven by a weak margin (0.16–0.17) and lands on a
-  plausible-but-wrong profile. This is exactly what `--ml-fp-margin` guards: at a
-  strict margin (0.5) both are correctly demoted to the generic fallback instead
-  of being trusted. The `lab_fingerprint.rs` test asserts this monotonic
-  behavior. A follow-up is to feed the soft-404 signatures (`dedup`) into the
-  fingerprint step so catch-alls are detected up front.
+  fingerprinting is unreliable (Juice Shop's raw `REST_API` even happens to be
+  right, DVWA's raw `WORDPRESS_CMS` is wrong). The shipped catch-all guard (E1)
+  and per-path soft-404 scoring (E2) **abstain** both in gated mode rather than
+  trust them, and `lab_fingerprint.rs` asserts it.
 - **Online learning works on real crawled paths.** `tests/lab_fingerprint.rs`
   also replays the real same-origin paths jsintel crawled from the Juice Shop SPA
   (`output_lab_run/assets/crawled_urls.txt`) through `observe()` and confirms the

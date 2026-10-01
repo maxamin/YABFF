@@ -38,6 +38,7 @@ pub fn feature_vector(responses: &[ProbeResp]) -> [f64; N_FEATURES] {
     let mut cookie_php = false;
     let mut php_sig = false;
     let mut root_json = false;
+    let mut cookie_django = false;
     for r in responses {
         if let Some(v) = r.header("x-powered-by") {
             x_powered_by = true;
@@ -67,6 +68,11 @@ pub fn feature_vector(responses: &[ProbeResp]) -> [f64; N_FEATURES] {
                 cookie_php = true;
                 php_sig = true;
             }
+            // Django's CSRF cookie is distinctive (its "sessionid" cookie is not,
+            // since "jsessionid" also contains it, so key only on csrftoken).
+            if lv.contains("csrftoken") {
+                cookie_django = true;
+            }
         }
         // root response content-type
         if norm_path(&r.url).is_empty() {
@@ -87,8 +93,15 @@ pub fn feature_vector(responses: &[ProbeResp]) -> [f64; N_FEATURES] {
     if has("index.php") || has("xmlrpc.php") {
         php_sig = true;
     }
-    let strong_dynamic =
-        rest_like || has("actuator") || has("wp-json") || swagger || x_powered_by;
+    let sig_spa = has("manifest.webmanifest") || has("_next") || has("assets");
+    let sig_django = cookie_django || has("static/admin");
+    let strong_dynamic = rest_like
+        || has("actuator")
+        || has("wp-json")
+        || swagger
+        || x_powered_by
+        || sig_spa
+        || sig_django;
     let static_sig = if strong_dynamic { 0.1 } else { 0.9 };
 
     let b = |cond: bool| if cond { 1.0 } else { 0.0 };
@@ -111,6 +124,8 @@ pub fn feature_vector(responses: &[ProbeResp]) -> [f64; N_FEATURES] {
         b(php_sig),               // 15
         b(jsp_sig),               // 16
         static_sig,               // 17
+        b(sig_spa),               // 18
+        b(sig_django),            // 19
     ]
 }
 

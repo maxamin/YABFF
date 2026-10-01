@@ -20,17 +20,18 @@ struct RawResp {
 }
 
 /// Real probe captures from the live jsintel labs, with best-judgment true labels
-/// for the actual stack. `(lab, true_label)`; DVWA/Django have no exact profile
-/// (classic PHP / server-rendered), so they are labelled `LEGACY_STATIC`.
+/// for the actual stack. `(lab, true_label)`. Juice Shop / WebGoat / Django are
+/// honest hard cases: their probes expose little same-origin signal (catch-all,
+/// 404s, or root-only), so the fingerprint can miss even with the right label.
 fn lab_dataset() -> Vec<(&'static str, &'static str, Vec<ProbeResp>)> {
     let raw: HashMap<String, Vec<RawResp>> =
         serde_json::from_str(include_str!("fixtures/jsintel_labs.json")).unwrap();
     let truth = [
         ("juice-shop", "REST_API"),
-        ("dvwa", "LEGACY_STATIC"),
+        ("dvwa", "PHP_GENERIC"),
         ("webgoat", "ENTERPRISE_JAVA_SPRING"),
         ("wordpress", "WORDPRESS_CMS"),
-        ("django", "LEGACY_STATIC"),
+        ("django", "DJANGO"),
     ];
     truth
         .iter()
@@ -70,7 +71,9 @@ fn labelled_dataset() -> Vec<(&'static str, Vec<ProbeResp>)> {
     let json = &[("content-type", "application/json")][..];
     let wpcookie = &[("set-cookie", "wordpress_test_cookie=1; path=/")][..];
     let php = &[("x-powered-by", "PHP/8.2")][..];
+    let phpcookie = &[("set-cookie", "PHPSESSID=abc; path=/"), ("x-powered-by", "PHP/8.2")][..];
     let java = &[("set-cookie", "JSESSIONID=x"), ("server", "Apache-Coyote/1.1")][..];
+    let csrf = &[("set-cookie", "csrftoken=xyz; Path=/")][..];
 
     vec![
         // ---- REST_API (clean) ----
@@ -89,6 +92,18 @@ fn labelled_dataset() -> Vec<(&'static str, Vec<ProbeResp>)> {
         ("LEGACY_STATIC", sample(&[("robots.txt", 200, &[]), ("api", 404, &[]), ("wp-json", 404, &[])])),
         ("LEGACY_STATIC", sample(&[("", 200, &[("content-type", "text/html")]), ("index.php", 404, &[]), ("actuator", 404, &[])])),
         ("LEGACY_STATIC", sample(&[("api", 404, &[]), ("rest", 404, &[]), ("wp-json", 404, &[]), ("actuator", 404, &[])])),
+        // ---- PHP_GENERIC (clean): PHP signals, no WordPress markers ----
+        ("PHP_GENERIC", sample(&[("index.php", 200, phpcookie), ("", 200, php), ("wp-json", 404, &[]), ("actuator", 404, &[])])),
+        ("PHP_GENERIC", sample(&[("index.php", 200, php), ("server-status", 200, php), ("wp-login.php", 404, &[])])),
+        ("PHP_GENERIC", sample(&[("", 200, phpcookie), ("index.php", 200, &[])])),
+        // ---- NODE_SPA (clean): SPA build output + a REST-ish backend ----
+        ("NODE_SPA", sample(&[("manifest.webmanifest", 200, &[]), ("assets", 200, &[]), ("api", 200, &[])])),
+        ("NODE_SPA", sample(&[("_next", 200, &[]), ("assets", 200, &[]), ("", 200, &[("content-type", "text/html")])])),
+        ("NODE_SPA", sample(&[("manifest.webmanifest", 200, &[]), ("_next", 200, &[])])),
+        // ---- DJANGO (clean): csrftoken cookie + static/admin ----
+        ("DJANGO", sample(&[("", 200, csrf), ("static/admin", 200, &[]), ("api", 200, &[])])),
+        ("DJANGO", sample(&[("admin/login", 200, csrf), ("static/admin", 200, &[])])),
+        ("DJANGO", sample(&[("static/admin", 200, &[]), ("api", 200, csrf)])),
     ]
 }
 
@@ -113,6 +128,9 @@ fn confusion_matrix_and_margin_sweep() {
         "ENTERPRISE_JAVA_SPRING" => "SPRING",
         "WORDPRESS_CMS" => "WP",
         "LEGACY_STATIC" => "STATIC",
+        "PHP_GENERIC" => "PHP",
+        "NODE_SPA" => "SPA",
+        "DJANGO" => "DJANGO",
         _ => "?",
     };
     println!("\nConfusion matrix (rows = true, cols = predicted):\n");

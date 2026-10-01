@@ -12,17 +12,20 @@ cargo test -p feroxbuster --test confusion -- --nocapture
 
 ## 1. Confusion matrix — clean labelled set
 
-12 hand-built probe samples (3 per profile) that faithfully represent each
-framework. The classifier is perfect here, which confirms the centroids and
-feature vector are sound:
+21 hand-built probe samples (3 per profile across all seven E4 profiles) that
+faithfully represent each framework. The classifier is perfect here, which
+confirms the centroids and feature vector are sound:
 
-| true \ pred | REST | SPRING | WP | STATIC | recall |
-|---|---:|---:|---:|---:|---:|
-| **REST** | 3 | 0 | 0 | 0 | 1.00 |
-| **SPRING** | 0 | 3 | 0 | 0 | 1.00 |
-| **WP** | 0 | 0 | 3 | 0 | 1.00 |
-| **STATIC** | 0 | 0 | 0 | 3 | 1.00 |
-| **precision** | 1.00 | 1.00 | 1.00 | 1.00 | **acc = 1.00** |
+| true \ pred | REST | SPRING | WP | STATIC | PHP | SPA | DJANGO | recall |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| **REST** | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 1.00 |
+| **SPRING** | 0 | 3 | 0 | 0 | 0 | 0 | 0 | 1.00 |
+| **WP** | 0 | 0 | 3 | 0 | 0 | 0 | 0 | 1.00 |
+| **STATIC** | 0 | 0 | 0 | 3 | 0 | 0 | 0 | 1.00 |
+| **PHP** | 0 | 0 | 0 | 0 | 3 | 0 | 0 | 1.00 |
+| **SPA** | 0 | 0 | 0 | 0 | 0 | 3 | 0 | 1.00 |
+| **DJANGO** | 0 | 0 | 0 | 0 | 0 | 0 | 3 | 1.00 |
+| **precision** | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | **acc = 1.00** |
 
 ### Confidence-gate margin sweep
 
@@ -40,31 +43,25 @@ How `--ml-fp-margin` trades coverage for safety on the clean set (accuracy stays
 ## 2. Confusion matrix — real jsintel labs (the hard case)
 
 Replaying the live captures (`tests/fixtures/jsintel_labs.json`) with
-best-judgment true labels (DVWA/Django are classic PHP / server-rendered apps
-with no exact profile → `LEGACY_STATIC`):
+best-judgment true labels for the actual stack (DVWA → `PHP_GENERIC`, Django →
+`DJANGO` now that E4 added those profiles):
 
 | lab | true | predicted | correct |
 |---|---|---|:-:|
 | juice-shop | REST | REST | ✓ |
-| dvwa | STATIC | WP | ✗ |
+| dvwa | PHP | WP | ✗ |
 | webgoat | SPRING | STATIC | ✗ |
 | wordpress | WP | WP | ✓ |
-| django | STATIC | STATIC | ✓ |
+| django | DJANGO | DJANGO | ✓ |
 
-| true \ pred | REST | SPRING | WP | STATIC |
-|---|---:|---:|---:|---:|
-| **REST** | 1 | 0 | 0 | 0 |
-| **SPRING** | 0 | 0 | 0 | 1 |
-| **WP** | 0 | 0 | 1 | 0 |
-| **STATIC** | 0 | 0 | 1 | 1 |
-
-**Field accuracy: 3/5 = 0.60** (raw classifier, after E3 weighting — it was 2/5
-before weighting; Juice Shop now reads REST instead of Spring). The two remaining
-misses show the hard cases the enhancements target: **catch-all / soft-404
-servers** (Juice Shop, DVWA answer 200 to *every* probe, so path-presence is
-noise — note Juice Shop's "correct" REST here is a catch-all coincidence E1/E2
-rightly distrust) and **missing profiles** (DVWA is PHP-not-WordPress; WebGoat's
-app lives under `/WebGoat/`, so the probe sees only 404s).
+**Field accuracy: 3/5 = 0.60** (raw classifier). The arc across enhancements: 2/5
+before E3; E3 fixed Juice Shop (REST, not Spring); E4 made Django a *genuine* hit
+(its root sets a `csrftoken` cookie — the DJANGO profile keys on it — rather than a
+coincidental `LEGACY_STATIC`). The two remaining misses are the honest hard cases:
+**catch-all servers** (DVWA answers 200 to every probe, so its WP-marker presence
+is noise — E1/E2 abstain it in gated mode; Juice Shop's correct REST is likewise a
+catch-all the gated path distrusts) and **no same-origin signal** (WebGoat's app
+lives under `/WebGoat/`, so the probe sees only 404s).
 
 ## 3. Enhancements
 
@@ -142,13 +139,29 @@ reads REST instead of Spring, because the real REST signals outweigh its spuriou
 closer profiles are added, a correctly-weighted metric is what keeps them
 separable.
 
-### ⬜ E4 — More profiles (NODE_SPA, PHP_GENERIC, DJANGO)
+### ✅ E4 — More profiles  *(shipped)*
 
-Four profiles force PHP apps and SPAs into ill-fitting buckets (DVWA→WP,
-Juice-Shop→Spring). Add centroids + seed matrices for the common stacks and add
-SPA discriminators to the probe (`/_next/`, `/assets/`, `manifest.webmanifest`,
-GraphQL introspection). *Test:* add labelled samples for the new profiles to the
-clean set and confirm the diagonal holds.
+Four profiles forced PHP apps and SPAs into ill-fitting buckets (DVWA→WP,
+Juice-Shop→Spring). The engine now has **seven**: added `PHP_GENERIC`, `NODE_SPA`,
+and `DJANGO`, each with a centroid and a seed Markov matrix. The feature vector
+grew two discriminators — `sig_spa` (`manifest.webmanifest` / `/_next` / `/assets`)
+and `sig_django` (a `csrftoken` cookie or `/static/admin`) — and the probe set
+grew the matching paths.
+
+**Shipped** in [`profiles.rs`](../../ferox-ml-core/src/profiles.rs) (centroids,
+`FEATURE_WEIGHTS`, `PROBE_PATHS`, `PROFILES`, seed matrices) and
+[`fingerprint.rs`](../../ferox-ml-core/src/fingerprint.rs) (the two new features).
+The clean set is a perfect **7×7** diagonal (21 samples), and on the real labs E4
+turned Django into a *genuine* hit — the live Django lab sets a `csrftoken` cookie,
+so it now classifies as `DJANGO` instead of coincidentally as `LEGACY_STATIC`.
+DVWA (a PHP catch-all) is now correctly labelled `PHP_GENERIC` as ground truth; its
+raw guess is still WP (catch-all noise), which E1/E2 abstain in gated mode.
+
+*Design note:* the new near-origin centroids (SPA/Django/PHP sit close to the
+zero vector) narrowed the margin for signal-less targets (WebGoat's static-fallback
+gap went ~1.5 → ~0.9), which is why E3's weighted metric matters more now — it
+keeps the denser profile space separable. Natural next step: `RAILS`, `ASPNET`,
+`FLASK`, and GraphQL-introspection as its own signal.
 
 ### ⬜ E5 — Calibrated confidence
 
@@ -179,11 +192,12 @@ siblings are still proposed. *Test:* learn `getUserById`, predict after
 
 ## Takeaway
 
-The fingerprinter is accurate on clean signal (100%) and the confidence gate
-degrades safely; real-world catch-all servers are the hard case. Three
-enhancements are now **shipped** in the engine: E1 (catch-all guard) and E2
-(per-path soft-404 scoring) turn untrustworthy catch-alls into safe abstentions,
-and E3 (feature weighting) lifted raw field accuracy 2/5 → 3/5 by letting strong
-discriminators outweigh accidental presence. E4 (more, closer profiles) is the
-next step — actually *classifying* the PHP / SPA cases rather than abstaining, with
-the weighted metric from E3 keeping the denser profile space separable.
+The fingerprinter is accurate on clean signal (now a perfect 7×7 diagonal) and the
+confidence gate degrades safely; real-world catch-all servers are the hard case.
+Four enhancements are now **shipped** in the engine: E1 (catch-all guard) and E2
+(per-path soft-404 scoring) turn untrustworthy catch-alls into safe abstentions;
+E3 (feature weighting) lifted raw field accuracy 2/5 → 3/5 by letting strong
+discriminators outweigh accidental presence; and E4 (seven profiles incl.
+PHP_GENERIC / NODE_SPA / DJANGO) added the missing stacks and made Django a genuine
+hit via its `csrftoken` cookie. E5–E8 (calibrated confidence, online
+re-fingerprinting, real K-Means, Markov subword back-off) remain proposed.

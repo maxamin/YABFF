@@ -7,8 +7,9 @@ that *which* paths get tried, and in *what order*, is learned and adapted instea
 of fixed:
 
 1. **K-Means / nearest-centroid fingerprinting** — a bounded probe classifies the
-   target into one of four framework profiles (`REST_API`,
-   `ENTERPRISE_JAVA_SPRING`, `WORDPRESS_CMS`, `LEGACY_STATIC`).
+   target into one of seven framework profiles (`REST_API`,
+   `ENTERPRISE_JAVA_SPRING`, `WORDPRESS_CMS`, `LEGACY_STATIC`, `PHP_GENERIC`,
+   `NODE_SPA`, `DJANGO`), with a weighted metric and catch-all / soft-404 guards.
 2. **Variable-order Markov / PPM path prediction** — seeded per profile, it
    predicts the most probable next path tokens for any discovered directory, and
    learns online as real paths are found.

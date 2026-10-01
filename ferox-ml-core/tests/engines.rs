@@ -433,8 +433,12 @@ fn rng_is_deterministic_and_bounded() {
 
 #[test]
 fn profile_tables_are_well_formed() {
-    assert_eq!(PROFILES.len(), 4);
-    assert_eq!(centroids().len(), 4);
+    assert_eq!(PROFILES.len(), 7);
+    assert_eq!(centroids().len(), PROFILES.len());
+    // every profile has a centroid and vice-versa
+    for p in PROFILES {
+        assert!(centroids().iter().any(|(n, _)| *n == p), "{p} needs a centroid");
+    }
     for (_, c) in centroids() {
         assert_eq!(c.len(), N_FEATURES);
     }

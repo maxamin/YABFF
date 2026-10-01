@@ -59,7 +59,7 @@ fn every_lab_probe_answered_and_classifies() {
             "{lab}: at least one probe should have answered"
         );
         let (profile, dists) = ml::fingerprint(probes);
-        assert_eq!(dists.len(), 4, "{lab}: distance to all four profiles");
+        assert_eq!(dists.len(), ml::PROFILES.len(), "{lab}: distance to every profile");
         assert!(
             ml::PROFILES.contains(&profile.as_str()),
             "{lab}: classified as a known profile, got {profile}"
@@ -78,16 +78,26 @@ fn wordpress_lab_is_identified() {
 }
 
 #[test]
-fn sparse_or_404_labs_fall_to_static_by_a_wide_margin() {
+fn signal_less_lab_falls_to_static() {
     let labs = load_labs();
-    for lab in ["webgoat", "django"] {
-        let (_, dists) = ml::fingerprint(&labs[lab]);
-        let margin = dists[1].1 - dists[0].1;
-        let (profile, confident) = ml::fingerprint_gated(&labs[lab], 0.10);
-        assert_eq!(profile, "LEGACY_STATIC", "{lab} with no dynamic signal");
-        assert!(confident);
-        assert!(margin > 1.0, "{lab}: unambiguous static, margin={margin}");
-    }
+    // WebGoat answers 404 to every probe path and sets no discriminating header,
+    // so with no signal at all it falls to LEGACY_STATIC by a clear margin.
+    let (_, dists) = ml::fingerprint(&labs["webgoat"]);
+    let margin = dists[1].1 - dists[0].1;
+    let (profile, confident) = ml::fingerprint_gated(&labs["webgoat"], 0.10);
+    assert_eq!(profile, "LEGACY_STATIC", "webgoat with no dynamic signal");
+    assert!(confident);
+    assert!(margin > 0.5, "webgoat: unambiguous static, margin={margin}");
+}
+
+#[test]
+fn django_lab_is_identified_by_its_csrftoken() {
+    let labs = load_labs();
+    // E4: the Django lab exposes little on the probe paths, but its root sets a
+    // csrftoken cookie — a real Django signal the DJANGO profile keys on.
+    let (profile, confident) = ml::fingerprint_gated(&labs["django"], 0.10);
+    assert_eq!(profile, "DJANGO");
+    assert!(confident);
 }
 
 #[test]

@@ -91,17 +91,20 @@ response types. The swap-in traits in
 ### 1. Framework fingerprinting — K-Means / nearest-centroid
 [`fingerprint.rs`](ferox-ml-core/src/fingerprint.rs) · [`profiles.rs`](ferox-ml-core/src/profiles.rs)
 
-A bounded probe requests ~18 discriminating paths (`/wp-json`, `/actuator`,
-`/api/v1`, `/swagger-ui.html`, `/xmlrpc.php`, …). Their statuses and a few headers
-(`x-powered-by`, `server`, `set-cookie`, root `content-type`) become an **18-dim
-feature vector**, which is classified to the nearest of four profile **centroids**
-by Euclidean distance:
+A bounded probe requests ~22 discriminating paths (`/wp-json`, `/actuator`,
+`/api/v1`, `/swagger-ui.html`, `/xmlrpc.php`, `manifest.webmanifest`, …). Their
+statuses and a few headers (`x-powered-by`, `server`, `set-cookie`, root
+`content-type`) become a **20-dim feature vector**, which is classified to the
+nearest of seven profile **centroids** by a weighted Euclidean distance (strong
+discriminators — session cookies, framework signals — outweigh noisy path bits):
 
-`REST_API` · `ENTERPRISE_JAVA_SPRING` · `WORDPRESS_CMS` · `LEGACY_STATIC`
+`REST_API` · `ENTERPRISE_JAVA_SPRING` · `WORDPRESS_CMS` · `LEGACY_STATIC` ·
+`PHP_GENERIC` · `NODE_SPA` · `DJANGO`
 
 A **confidence gate** (`fingerprint_gated`) only trusts the result when at least
-one probe answered *and* the nearest centroid beats the runner-up by a margin
-(`--ml-fp-margin`, default `0.10`); otherwise it falls back to a generic profile.
+one probe answered, the target is not a catch-all / soft-404 server, *and* the
+nearest centroid beats the runner-up by a margin (`--ml-fp-margin`, default
+`0.10`); otherwise it falls back to a generic profile.
 This is what keeps catch-all / soft-404 servers from forcing a confident wrong
 guess. (`KMeansClassifier` reduces to nearest-centroid for a single target and
 exists to seed real clustering when batch-probing many hosts.)

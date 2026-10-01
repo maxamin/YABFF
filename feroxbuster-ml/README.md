@@ -47,7 +47,7 @@ consumes a lightweight `ProbeResp` view rather than the scanner's response types
 
 | Engine | Module (`ferox-ml-core`) | Role & where it's wired |
 |---|---|---|
-| **K-Means / nearest-centroid fingerprinting** | [`fingerprint.rs`](../ferox-ml-core/src/fingerprint.rs), [`profiles.rs`](../ferox-ml-core/src/profiles.rs) | Classify the target into one of four profiles from a bounded probe. Confidence-gated (`main.rs`). |
+| **K-Means / nearest-centroid fingerprinting** | [`fingerprint.rs`](../ferox-ml-core/src/fingerprint.rs), [`profiles.rs`](../ferox-ml-core/src/profiles.rs) | Classify the target into one of seven profiles (weighted metric) from a bounded probe. Confidence-gated + catch-all/soft-404 guarded (`main.rs`). |
 | **Variable-order Markov / PPM prediction** | [`markov.rs`](../ferox-ml-core/src/markov.rs) | Predict next path tokens per directory; seeded per profile, learns online. Injected by the scanner. |
 | **Thompson / UCB1 bandit** | [`scheduler.rs`](../ferox-ml-core/src/scheduler.rs) | Scales each directory's prediction budget by its hit-rate (`predict_for_scan`). |
 | **BM25 candidate ranking** | [`ranking.rs`](../ferox-ml-core/src/ranking.rs) | Re-rank predictions against the paths discovered so far. `--no-ml-rank` disables. |
@@ -144,7 +144,7 @@ scan tasks.
 
 ## Framework profiles
 
-The fingerprinter assigns one of four profiles; each ships a feature-vector
+The fingerprinter assigns one of seven profiles; each ships a feature-vector
 centroid (for classification) and a seed Markov transition matrix (for cold-start
 predictions). Defined in [`ferox-ml-core/src/profiles.rs`](../ferox-ml-core/src/profiles.rs):
 
@@ -154,6 +154,9 @@ predictions). Defined in [`ferox-ml-core/src/profiles.rs`](../ferox-ml-core/src/
 | `ENTERPRISE_JAVA_SPRING` | Spring / enterprise Java apps (`/actuator`, …) | `actuator → health → readiness` |
 | `WORDPRESS_CMS` | WordPress (`/wp-json`, `/wp-login.php`, `/xmlrpc.php`) | `wp-content → plugins → woocommerce` |
 | `LEGACY_STATIC` | Classic static sites / directory trees | `admin → login`, `images → logo.png` |
+| `PHP_GENERIC` | Non-WordPress PHP apps (PHPSESSID, `x-powered-by: PHP`, `.php`) | `admin → index.php`, `includes → config.php` |
+| `NODE_SPA` | SPA build output (`manifest.webmanifest`, `/_next`, `/assets`) | `api → v1`, `assets → index.js` |
+| `DJANGO` | Django (`csrftoken` cookie, `/static/admin`) | `admin → login`, `api → v1` |
 
 The model is **variable-order** (PPM-style, default max order 3): longer matching
 path contexts win, backing off to shorter contexts when unseen. Online updates and
