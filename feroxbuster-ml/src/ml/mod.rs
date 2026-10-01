@@ -18,63 +18,32 @@
 //! discovered URL is [`observe`]d to learn online, and the model is [`save`]d on
 //! shutdown.
 
-pub mod dedup;
-pub mod fingerprint;
-pub mod interfaces;
-pub mod markov;
-pub mod profiles;
-pub mod ranking;
-pub mod rng;
-pub mod scheduler;
-pub mod tokenize;
-
 use std::collections::HashMap;
 use std::sync::RwLock;
 
 use lazy_static::lazy_static;
 
-use interfaces::{Predictor, Scheduler};
-use markov::MarkovModel;
-use ranking::Bm25;
-use tokenize::{last_segment, path_segments};
+// The engines live in the shared `ferox-ml-core` crate (see also `../../feroxml`,
+// which depends on the same crate). This module is just the in-crate runtime
+// façade: a process-wide learned model plus the glue `main.rs`, the scanner, and
+// the output handler call.
+use ferox_ml_core::interfaces::{Predictor, Scheduler};
+use ferox_ml_core::markov::MarkovModel;
+use ferox_ml_core::ranking::Bm25;
+use ferox_ml_core::tokenize::{last_segment, path_segments};
 
-/// Lightweight view of a probe/scan response for fingerprinting and learning.
-#[derive(Debug, Clone, Default)]
-pub struct ProbeResp {
-    pub url: String,
-    pub status: u16,
-    pub headers: HashMap<String, String>,
-}
-
-impl ProbeResp {
-    pub fn new(url: &str, status: u16) -> Self {
-        Self {
-            url: url.to_string(),
-            status,
-            headers: HashMap::new(),
-        }
-    }
-
-    /// Case-insensitive header lookup.
-    pub fn header(&self, name: &str) -> Option<&str> {
-        let want = name.to_lowercase();
-        self.headers
-            .iter()
-            .find(|(k, _)| k.to_lowercase() == want)
-            .map(|(_, v)| v.as_str())
-    }
-}
+pub use ferox_ml_core::{ProbeResp, PROFILES};
 
 /// The discriminating paths the fingerprint probe requests.
 pub fn probe_paths() -> &'static [&'static str] {
-    &profiles::PROBE_PATHS
+    &ferox_ml_core::profiles::PROBE_PATHS
 }
 
 /// Classify probe responses into a framework profile + centroid distances.
 pub fn fingerprint(probes: &[ProbeResp]) -> (String, Vec<(String, f64)>) {
-    use interfaces::Classifier;
-    let fv = fingerprint::feature_vector(probes);
-    fingerprint::NearestCentroid.classify(&fv)
+    use ferox_ml_core::interfaces::Classifier;
+    let fv = ferox_ml_core::fingerprint::feature_vector(probes);
+    ferox_ml_core::fingerprint::NearestCentroid.classify(&fv)
 }
 
 /// Fallback profile used when a fingerprint can't be trusted.
@@ -182,7 +151,7 @@ pub fn init(profile: &str, model_path: &str, params: &MlParams) {
             model,
             model_path: model_path.to_string(),
             bm25: Bm25::new(),
-            scheduler: scheduler::build(&params.scheduler, params.seed),
+            scheduler: ferox_ml_core::scheduler::build(&params.scheduler, params.seed),
             hits_by_dir: HashMap::new(),
             predictions: params.predictions,
             rank: params.rank,
@@ -422,6 +391,64 @@ mod tests {
             full.len()
         );
 
+        reset();
+    }
+
+    #[test]
+    fn fingerprint_gate_margin_is_monotonic() {
+        // a clear WordPress target: trusted at a lenient margin, demoted to the
+        // generic profile once the required margin exceeds the actual gap
+        let mut wp = ProbeResp::new("https://x.test/wp-json", 200);
+        wp.headers
+            .insert("content-type".into(), "application/json".into());
+        let probes = vec![
+            wp,
+            ProbeResp::new("https://x.test/wp-login.php", 200),
+            ProbeResp::new("https://x.test/xmlrpc.php", 405),
+        ];
+        let (_, dists) = fingerprint(&probes);
+        let gap = dists[1].1 - dists[0].1;
+
+        let (p_lo, c_lo) = fingerprint_gated(&probes, gap * 0.5);
+        assert!(c_lo && p_lo == "WORDPRESS_CMS");
+
+        let (p_hi, c_hi) = fingerprint_gated(&probes, gap * 2.0 + 1.0);
+        assert!(!c_hi && p_hi == GENERIC_PROFILE);
+    }
+
+    #[test]
+    fn predict_budget_has_a_floor_for_unproductive_dirs() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        reset();
+        init("REST_API", "", &MlParams::default()); // predictions = 25
+
+        // rich learned context so budget (not availability) binds
+        for i in 0..40 {
+            observe(&format!("https://x.test/zone/leaf{i}"));
+        }
+        // zero hits over a huge base pass => minimum reward, but the floor keeps a
+        // non-empty, bounded budget (>= 25%)
+        let floored = predict_for_scan("https://x.test/zone", 1_000_000);
+        assert!(!floored.is_empty(), "floor keeps at least one prediction");
+        assert!(floored.len() <= 25, "never exceeds the base budget");
+
+        reset();
+    }
+
+    #[test]
+    fn no_rank_keeps_predictor_order_and_scheduler_choice_is_honored() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        reset();
+        let params = MlParams {
+            rank: false,
+            scheduler: "ucb1".to_string(),
+            ..MlParams::default()
+        };
+        init("REST_API", "", &params);
+        assert!(is_active());
+        // with ranking off we still get the seed chain for /api
+        let preds = predict_for_scan("https://x.test/api", 0);
+        assert!(preds.iter().any(|w| w == "v1"), "preds={preds:?}");
         reset();
     }
 }

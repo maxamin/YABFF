@@ -53,7 +53,7 @@ fn learn_predict_and_persist_end_to_end() {
     let _ = std::fs::remove_file(&model_path);
 
     // seed the REST profile; its seed predicts api -> v1
-    ml::init("REST_API", &model_path, 3, 0.5, 0.02);
+    ml::init("REST_API", &model_path, &ml::MlParams::default());
     assert!(ml::is_active());
     let preds = ml::predict_words("https://x.test/api", 6);
     assert!(preds.iter().any(|w| w == "v1"), "preds={preds:?}");
@@ -66,7 +66,7 @@ fn learn_predict_and_persist_end_to_end() {
     // persist, then a fresh init (different profile) merges the learning back
     ml::save();
     assert!(std::path::Path::new(&model_path).exists());
-    ml::init("LEGACY_STATIC", &model_path, 3, 0.5, 0.02);
+    ml::init("LEGACY_STATIC", &model_path, &ml::MlParams::default());
     let merged = ml::predict_words("https://x.test/shop/checkout", 6);
     assert!(
         merged.iter().any(|w| w == "receipt"),

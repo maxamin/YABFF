@@ -29,6 +29,7 @@ lazy_static = "1.5"
 dirs = "5.0"
 
 [dependencies]
+ferox-ml-core = { path = "../ferox-ml-core" }
 scraper = "0.19"
 futures = "0.3"
 tokio = { version = "1.47", features = ["full"] }

@@ -205,7 +205,7 @@ mod tests {
 
     #[test]
     fn seed_rows_are_normalizable_to_one() {
-        for profile in crate::PROFILES {
+        for profile in crate::profiles::PROFILES {
             let m = MarkovModel::seeded(profile, 3, 0.5, 0.0);
             // every seeded context's MLE distribution sums to 1.0
             for (from, _) in profiles::seed_matrix(profile) {

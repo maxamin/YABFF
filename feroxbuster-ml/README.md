@@ -37,35 +37,50 @@ additive and off unless you ask for it.
 
 ## What this fork adds
 
-A self-contained ML engine lives in [`src/ml/`](src/ml/) (plus a small tf-idf
-helper in [`src/nlp/`](src/nlp/)). It is pure Rust, has no network dependencies of
-its own, and is unit-testable in isolation — the fingerprinter consumes a
-lightweight `ProbeResp` view rather than the scanner's own response types.
+The ML engines live in the shared [`ferox-ml-core`](../ferox-ml-core/) crate (so
+the sibling `feroxml` tool uses exactly the same code — fixes land once). This
+crate adds the in-crate runtime façade ([`src/ml/mod.rs`](src/ml/mod.rs)) that
+wires those engines into feroxbuster's own scan loop, plus a small tf-idf helper
+in [`src/nlp/`](src/nlp/). The engines are pure Rust, have no network
+dependencies of their own, and are unit-tested in isolation — fingerprinting
+consumes a lightweight `ProbeResp` view rather than the scanner's response types.
 
-| Engine | Module | Role |
+| Engine | Module (`ferox-ml-core`) | Role & where it's wired |
 |---|---|---|
-| **K-Means / nearest-centroid fingerprinting** | [`ml/fingerprint.rs`](src/ml/fingerprint.rs), [`ml/profiles.rs`](src/ml/profiles.rs) | Classify the target into one of four framework profiles from a bounded probe |
-| **Variable-order Markov / PPM prediction** | [`ml/markov.rs`](src/ml/markov.rs) | Predict the most probable next path tokens; seeded per profile, learns online |
-| **Thompson-sampling scheduler** | [`ml/scheduler.rs`](src/ml/scheduler.rs) | Multi-armed bandit for spending request budget on promising directories |
-| **BM25 candidate ranking** | [`ml/ranking.rs`](src/ml/ranking.rs) | Re-rank predicted candidates before they are scanned |
-| **SimHash soft-404 filtering** | [`ml/dedup.rs`](src/ml/dedup.rs) | Keep near-duplicate / soft-404 responses out of the signal |
-| **tf-idf helper** | [`src/nlp/`](src/nlp/) | Small stand-alone tf-idf library used by the engines |
+| **K-Means / nearest-centroid fingerprinting** | [`fingerprint.rs`](../ferox-ml-core/src/fingerprint.rs), [`profiles.rs`](../ferox-ml-core/src/profiles.rs) | Classify the target into one of four profiles from a bounded probe. Confidence-gated (`main.rs`). |
+| **Variable-order Markov / PPM prediction** | [`markov.rs`](../ferox-ml-core/src/markov.rs) | Predict next path tokens per directory; seeded per profile, learns online. Injected by the scanner. |
+| **Thompson / UCB1 bandit** | [`scheduler.rs`](../ferox-ml-core/src/scheduler.rs) | Scales each directory's prediction budget by its hit-rate (`predict_for_scan`). |
+| **BM25 candidate ranking** | [`ranking.rs`](../ferox-ml-core/src/ranking.rs) | Re-rank predictions against the paths discovered so far. `--no-ml-rank` disables. |
+| **SimHash / soft-404 signatures** | [`dedup.rs`](../ferox-ml-core/src/dedup.rs) | Near-duplicate / soft-404 primitives. |
+| **tf-idf helper** | [`src/nlp/`](src/nlp/) | Small stand-alone tf-idf library (in-crate). |
 
-Supporting pieces: `ml/tokenize.rs` (path tokenization), `ml/rng.rs`
-(dependency-free deterministic RNG), `ml/interfaces.rs` (the `Classifier` /
-`Predictor` traits), and `ml/mod.rs` (the runtime façade: `fingerprint`, `init`,
-`predict_words`, `observe`, `save`).
+Supporting pieces in the core crate: `tokenize.rs` (path tokenization), `rng.rs`
+(dependency-free deterministic RNG), `interfaces.rs` (the `Classifier` /
+`Predictor` / `Scheduler` traits). The façade [`src/ml/mod.rs`](src/ml/mod.rs)
+holds the process-wide learned model and exposes `probe_paths`,
+`fingerprint_gated`, `init`, `predict_words`, `predict_for_scan`, `observe`, and
+`save`.
+
+> **Measured, not asserted.** On a synthetic REST-shaped target, `--ml` reaches
+> an entire `/api/v1`+`/api/v2` subtree that stock feroxbuster cannot find with
+> the same wordlist (19 vs 11 resources) — see
+> [`docs/analysis/ml-ab-benchmark.md`](../docs/analysis/ml-ab-benchmark.md),
+> reproduce with [`scripts/ab_benchmark.py`](../scripts/ab_benchmark.py). The
+> fingerprinter is also tested against a live multi-framework lab estate (Juice
+> Shop, DVWA, WebGoat, WordPress, Django): see
+> [`docs/analysis/jsintel-lab-results.md`](../docs/analysis/jsintel-lab-results.md)
+> and the replayed [`tests/lab_fingerprint.rs`](tests/lab_fingerprint.rs).
 
 ## Quick start (ML)
 
-Build the fork, then enable the layer with `--ml`:
+Build the workspace, then enable the layer with `--ml`:
 
 ```bash
-# build
+# build (from the repo root or this directory)
 cargo build --release
 # ./target/release/feroxbuster
 
-# one-shot: fingerprint + inject predicted paths, learn online (nothing persisted)
+# one-shot: fingerprint + per-directory predictions, learn online (nothing persisted)
 feroxbuster --ml -u https://target.test -w /usr/share/seclists/Discovery/Web-Content/common.txt
 
 # persistent learning: load a model, keep adapting during the scan, save it back
@@ -75,59 +90,70 @@ feroxbuster --ml-model ./model.json -u https://target.test -w common.txt
 
 | Flag | Effect |
 |---|---|
-| `--ml` | Enable the native ML layer: fingerprint the target and inject Markov-predicted paths into the scan, learning online. |
-| `--ml-model <path>` | Path to a learned model to load (merged onto the profile seed) and update; the updated model is written back on shutdown. **Implies `--ml`.** |
+| `--ml` | Enable the ML layer: fingerprint the target and inject per-directory Markov predictions, learning online. |
+| `--ml-model <path>` | Load a learned model (merged onto the profile seed) and update it; written back on shutdown. **Implies `--ml`.** |
+| `--ml-order <n>` | Maximum Markov order / PPM back-off depth (default `3`). |
+| `--ml-predictions <n>` | Base predictions injected per directory (default `25`, scaled 25–100% by the bandit). |
+| `--ml-scheduler <name>` | Budget bandit: `thompson` (default), `ucb1`, or `round_robin`. |
+| `--no-ml-rank` | Disable BM25 re-ranking of predictions. |
 
-Both can also be set in [`ferox-config.toml`](ferox-config.toml.example) via the
-`ml` and `ml_model` keys.
+These (plus the advanced `ml_soft404` / `ml_fp_margin` knobs) can also be set in
+[`ferox-config.toml`](ferox-config.toml.example).
 
 ## How the ML layer works
 
-feroxbuster cannot add entries to a *running* scan, so the ML layer does its work
-at scan setup and then learns continuously as results stream in:
+feroxbuster cannot add entries to a *running* scan — but each discovered
+directory becomes its **own** recursive scan, so the layer predicts fresh,
+context-specific paths for every directory it visits:
 
 ```
    --ml set
       │
       ▼
-  probe target            GET a fixed set of discriminating paths (ml::probe_paths)
-      │                   e.g. /wp-json, /rest, /actuator, /xmlrpc.php …
+  probe target (concurrent)   GET a fixed set of discriminating paths (ml::probe_paths),
+      │                       all at once — e.g. /wp-json, /api/v1, /actuator, /openapi.json
       ▼
-  fingerprint             feature-vector → nearest centroid → framework profile
-      │                   (REST_API | ENTERPRISE_JAVA_SPRING | WORDPRESS_CMS | LEGACY_STATIC)
+  fingerprint (gated)         feature-vector → nearest centroid → profile, IF the match
+      │                       clears --ml-fp-margin and a probe answered; else a generic
+      │                       profile  (REST_API | ENTERPRISE_JAVA_SPRING | WORDPRESS_CMS | LEGACY_STATIC)
       ▼
-  seed + merge            MarkovModel::seeded(profile) merged with any --ml-model on disk
+  seed + merge                MarkovModel::seeded(profile) merged with any --ml-model on disk
       │
       ▼
-  inject predictions      predict_words("", 25) → extra words added to the wordlist
-      │
+  SCAN each directory ───────────────────────────────────────────────┐
+      │   base wordlist pass (feroxbuster's normal discovery)          │
+      │          │                                                     │
+      │          ▼                                                     │
+      │   observe online        every hit → model.learn(url),          │
+      │          │              BM25 corpus += segment, credit dir     │
+      │          ▼                                                     │
+      │   predict_for_scan      budget = f(bandit value of this dir);  │
+      │          │              Markov predict → BM25 rerank → inject  │
+      │          ▼              an extra bounded request pass          │
+      │   recurse into newly discovered directories ──────────────────┘
       ▼
-  SCAN (feroxbuster)      normal recursive content discovery runs
-      │
-      ▼
-  observe online          every discovered URL → model.learn(url)   (event_handlers::outputs)
-      │
-      ▼
-  save on shutdown        persist updated model to --ml-model (no-op if unset)
+  save on shutdown            persist updated model to --ml-model (no-op if unset)
 ```
 
-Runtime wiring lives in [`src/main.rs`](src/main.rs) (probe → fingerprint → init →
-inject → save) and [`src/event_handlers/outputs.rs`](src/event_handlers/outputs.rs)
-(the online `observe` of each discovered URL). The active model is a process-wide
-`RwLock<Option<…>>` shared across scan tasks.
+Runtime wiring: [`src/main.rs`](src/main.rs) (concurrent probe → gated fingerprint
+→ init → seed injection), [`src/scanner/ferox_scanner.rs`](src/scanner/ferox_scanner.rs)
+(the per-directory `predict_for_scan` pass), and
+[`src/event_handlers/outputs.rs`](src/event_handlers/outputs.rs) (online `observe`
+of each discovered URL). The active model is a process-wide `RwLock` shared across
+scan tasks.
 
 ## Framework profiles
 
 The fingerprinter assigns one of four profiles; each ships a feature-vector
 centroid (for classification) and a seed Markov transition matrix (for cold-start
-predictions). Defined in [`src/ml/profiles.rs`](src/ml/profiles.rs):
+predictions). Defined in [`ferox-ml-core/src/profiles.rs`](../ferox-ml-core/src/profiles.rs):
 
-| Profile | Recognizes | Example cold-start predictions |
+| Profile | Recognizes | Example cold-start chain |
 |---|---|---|
-| `REST_API` | JSON/REST surfaces (`/api`, `/rest`, versioned endpoints) | `api → v1`, `users → me/login/search` |
-| `ENTERPRISE_JAVA_SPRING` | Spring / enterprise Java apps (`/actuator`, …) | Spring actuator & servlet paths |
-| `WORDPRESS_CMS` | WordPress (`/wp-json`, `/wp-login.php`, `/xmlrpc.php`) | WordPress admin / content paths |
-| `LEGACY_STATIC` | Classic static sites / directory trees | Conventional static layout |
+| `REST_API` | JSON/REST surfaces (`/api`, `/rest`, versioned endpoints) | `api → v1 → users → me` |
+| `ENTERPRISE_JAVA_SPRING` | Spring / enterprise Java apps (`/actuator`, …) | `actuator → health → readiness` |
+| `WORDPRESS_CMS` | WordPress (`/wp-json`, `/wp-login.php`, `/xmlrpc.php`) | `wp-content → plugins → woocommerce` |
+| `LEGACY_STATIC` | Classic static sites / directory trees | `admin → login`, `images → logo.png` |
 
 The model is **variable-order** (PPM-style, default max order 3): longer matching
 path contexts win, backing off to shorter contexts when unseen. Online updates and
@@ -135,29 +161,34 @@ merged persisted models refine these seeds over time.
 
 ## Testing
 
-The ML and NLP layers are fully offline and unit-tested in isolation:
+Everything is fully offline. The engines are tested in the core crate; the fork
+tests the façade and the tf-idf helper:
 
 ```bash
-cargo test            # whole crate
-cargo test ml::       # just the ML engines
-cargo test nlp::      # just the tf-idf helper
+cargo test -p ferox-ml-core        # the shared engines (47 tests)
+cargo test -p feroxbuster ml::      # the in-crate ML façade (gate, budget, round-trip)
+cargo test -p feroxbuster nlp::     # the tf-idf helper
+cargo test -p feroxbuster --test lab_fingerprint   # replayed live-lab fixtures
+cargo test -p feroxbuster --test ml_integration    # end-to-end ML API
 ```
 
-There are **41** ML/NLP unit tests covering probe-path markers, profile
-fingerprinting, the init → predict → observe → save → reload round-trip, Markov
-prediction/back-off, ranking, dedup, and the tf-idf model — none of them touch the
-network.
+Coverage spans every engine (all four profile classifications, the confidence
+gate including catch-all demotion, Markov prediction/back-off/merge/persist, BM25
+ranking, the three schedulers and their value estimates, SimHash/soft-404, the
+tokenizers and RNG), the per-directory budget scaling, and real lab data replayed
+from the jsintel estate — none of it touches the network.
 
 ## Relationship to upstream and to `feroxml`
 
 - **Upstream feroxbuster** — this fork tracks [epi052/feroxbuster](https://github.com/epi052/feroxbuster)
   and keeps all of its behavior; the ML layer is additive and gated behind `--ml`.
   Upstream's own docs are preserved below.
-- **`feroxml`** (sibling in this repo, see [`../feroxml/`](../feroxml/)) — the same
-  engines wrapped *around* an unmodified feroxbuster binary as a standalone
-  orchestrator, adding a Thompson-sampling scheduler and explicit `--learn` / scan
-  modes. Use `feroxbuster-ml` when you want a single binary with `--ml`; use
-  `feroxml` when you want the adaptive request-budget loop around stock feroxbuster.
+- **`feroxml`** (sibling in this repo, see [`../feroxml/`](../feroxml/)) — wraps an
+  *unmodified* feroxbuster binary as a standalone orchestrator with an explicit
+  Thompson-scheduled, bounded-scan `--learn` / scan loop. It shares the
+  [`ferox-ml-core`](../ferox-ml-core/) engines with this fork. Use `feroxbuster-ml`
+  when you want a single binary with `--ml`; use `feroxml` when you want the
+  adaptive request-budget loop around stock feroxbuster.
 
 ---
 

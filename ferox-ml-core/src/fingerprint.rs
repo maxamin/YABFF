@@ -1,6 +1,6 @@
 //! Phase 1 — target fingerprinting.
 //!
-//! A bounded probe (run through feroxbuster over [`super::profiles::PROBE_PATHS`])
+//! A bounded probe (run through feroxbuster over [`crate::profiles::PROBE_PATHS`])
 //! yields responses; [`feature_vector`] turns them into a numeric vector, and a
 //! [`Classifier`] assigns the target to the nearest profile centroid.
 //!
@@ -10,10 +10,10 @@
 //! one assignment step, which is exactly nearest-centroid; it exists for parity
 //! and to seed a real KMeans when batch-probing many hosts later).
 
-use super::ProbeResp;
-use super::interfaces::Classifier;
-use super::profiles::{centroids, N_FEATURES};
-use super::tokenize::path_segments;
+use crate::ProbeResp;
+use crate::interfaces::Classifier;
+use crate::profiles::{centroids, N_FEATURES};
+use crate::tokenize::path_segments;
 
 /// Normalize a URL to its slash-joined path segments, lowercased.
 fn norm_path(url: &str) -> String {

@@ -20,10 +20,18 @@ This repo ships the same ML ideas in two forms — a standalone orchestrator tha
 | **Flag** | `--ml` / `--ml-model <path>` | `--learn` / `--i-have-authorization` / `--model <path>` |
 | **Docs** | [feroxbuster-ml/README.md](feroxbuster-ml/README.md) | [feroxml/README.md](feroxml/README.md) |
 
-Both share the same core engines: **K-Means / nearest-centroid** target
+Both share one engine crate, [`ferox-ml-core/`](ferox-ml-core/) (a Cargo
+workspace member), so a fix lands once: **K-Means / nearest-centroid** target
 fingerprinting (four framework profiles), **variable-order Markov / PPM** path
-prediction (seeded per profile, learns online), **BM25** candidate ranking, and
-**SimHash** soft-404 filtering.
+prediction (seeded per profile, learns online), **Thompson / UCB1** scheduling,
+**BM25** candidate ranking, and **SimHash** soft-404 filtering.
+
+The ML path is measured, not just asserted:
+[`docs/analysis/ml-ab-benchmark.md`](docs/analysis/ml-ab-benchmark.md) is a stock
+vs `--ml` A/B (reproducible with [`scripts/ab_benchmark.py`](scripts/ab_benchmark.py)),
+and [`docs/analysis/jsintel-lab-results.md`](docs/analysis/jsintel-lab-results.md)
+records fingerprinting against a live multi-framework lab estate (Juice Shop,
+DVWA, WebGoat, WordPress, Django).
 
 ## The study (docs)
 
@@ -42,21 +50,23 @@ feroxbuster, dirb, kiterunner, DirBuster, patator) that motivated the ML work:
 ## Layout
 
 ```
+ferox-ml-core/    shared ML engine crate (fingerprint, markov, scheduler, ranking, dedup)
 feroxbuster-ml/   feroxbuster fork with the native in-crate ML layer (--ml)
 feroxml/          standalone adaptive ML orchestrator around feroxbuster
 docs/
-  analysis/       capability comparison, benchmark, feature + correlation matrices, heatmap
+  analysis/       capability comparison, benchmarks (incl. the ML A/B), matrices, heatmap
   references/     per-tool API references + feroxbuster deep-dive + index
   prompt.md       the engineering spec
-scripts/          analysis scripts (correlation-matrix generation)
-bench/            local scoring target + wordlist used by the benchmark
+scripts/          analysis + benchmark scripts (ab_benchmark.py, correlation matrix)
+bench/            local scoring targets + wordlists used by the benchmarks
 tools/            third-party fuzzer source clones, reference only (git-ignored)
 ```
 
 ## Building
 
-Both tools are Rust crates built with `cargo build --release`; each runs its test
-suite fully offline with `cargo test`. See each tool's README for details.
+This repo is a Cargo workspace. From the root, `cargo build --release` builds all
+three crates and `cargo test` runs every suite fully offline; `cargo test -p
+<crate>` scopes to one. See each tool's README for details.
 
 ## License
 

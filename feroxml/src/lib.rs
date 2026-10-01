@@ -21,25 +21,16 @@
 //! wordlist entries into a running scan, so the adaptive loop works by spawning
 //! new, bounded feroxbuster scans per round — see [`orchestrator`].
 
-pub mod config;
-pub mod dedup;
-pub mod ferox;
-pub mod fingerprint;
-pub mod interfaces;
-pub mod markov;
-pub mod orchestrator;
-pub mod profiles;
-pub mod ranking;
-pub mod rng;
-pub mod scheduler;
-pub mod scope;
-pub mod tokenize;
-pub mod wordlist;
+// The ML engines are shared with feroxbuster-ml via the `ferox-ml-core` crate;
+// re-export them under their historical paths so the rest of feroxml
+// (`crate::markov`, `crate::fingerprint`, `crate::PROFILES`, ...) is unchanged.
+pub use ferox_ml_core::{
+    dedup, fingerprint, interfaces, markov, profiles, ranking, rng, scheduler, tokenize, ProbeResp,
+    PROFILES,
+};
 
-/// Framework profiles the fingerprinting engine can assign a target to.
-pub const PROFILES: [&str; 4] = [
-    "REST_API",
-    "ENTERPRISE_JAVA_SPRING",
-    "WORDPRESS_CMS",
-    "LEGACY_STATIC",
-];
+pub mod config;
+pub mod ferox;
+pub mod orchestrator;
+pub mod scope;
+pub mod wordlist;

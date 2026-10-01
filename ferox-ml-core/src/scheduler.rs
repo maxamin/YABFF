@@ -10,8 +10,8 @@
 
 use std::collections::HashMap;
 
-use super::interfaces::Scheduler;
-use super::rng::Rng;
+use crate::interfaces::Scheduler;
+use crate::rng::Rng;
 
 // ----------------------------- Thompson -----------------------------
 

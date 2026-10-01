@@ -1,0 +1,13 @@
+# Virtual workspace for the YABFF tools. The ML engines live once in
+# `ferox-ml-core`; both the feroxbuster fork (`feroxbuster-ml`) and the
+# standalone orchestrator (`feroxml`) depend on it, so fixes land in one place.
+[workspace]
+resolver = "2"
+members = ["ferox-ml-core", "feroxml", "feroxbuster-ml"]
+
+# Profiles must live at the workspace root; this mirrors the members' release
+# settings. (Each member keeps its own [profile.release] too, used only when the
+# crate is built standalone outside this workspace.)
+[profile.release]
+lto = true
+codegen-units = 1

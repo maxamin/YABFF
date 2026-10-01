@@ -1,0 +1,711 @@
+{
+ "juice-shop": [
+  {
+   "url": "http://127.0.0.1:3000/",
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.1:3000/wp-json",
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.1:3000/wp-login.php",
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.1:3000/actuator",
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.1:3000/actuator/health",
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.1:3000/api",
+   "status": 500,
+   "headers": {
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.1:3000/api/v1",
+   "status": 500,
+   "headers": {
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.1:3000/api/v2",
+   "status": 500,
+   "headers": {
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.1:3000/rest",
+   "status": 500,
+   "headers": {
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.1:3000/graphql",
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.1:3000/swagger-ui.html",
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.1:3000/openapi.json",
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.1:3000/v2/api-docs",
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.1:3000/.git/HEAD",
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.1:3000/robots.txt",
+   "status": 200,
+   "headers": {
+    "content-type": "text/plain; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.1:3000/xmlrpc.php",
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.1:3000/index.php",
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.1:3000/index.jsp",
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.1:3000/server-status",
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=UTF-8"
+   }
+  }
+ ],
+ "dvwa": [
+  {
+   "url": "http://127.0.0.3:8081/",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "set-cookie": "PHPSESSID=ba6f2b73744541753665e81a443732f6; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "content-type": "text/html;charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.3:8081/wp-json",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "set-cookie": "PHPSESSID=17ff1964bd1e9a7314b210c67401d587; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "content-type": "text/html;charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.3:8081/wp-login.php",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "set-cookie": "PHPSESSID=6fa9d1ad3d473346544b72f498e9f423; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "content-type": "text/html;charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.3:8081/actuator",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "set-cookie": "PHPSESSID=b542f2ec8689ad86b897e9c7725cd15d; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "content-type": "text/html;charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.3:8081/actuator/health",
+   "status": 302,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "set-cookie": "PHPSESSID=00d7dc549f7d21398fa3bead9cf64470; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.3:8081/api",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "set-cookie": "PHPSESSID=4df10af11f681634f1b43869d557f3de; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "content-type": "text/html;charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.3:8081/api/v1",
+   "status": 302,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "set-cookie": "PHPSESSID=ea3b0802372c66eed3f5cbfa44d97cd0; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.3:8081/api/v2",
+   "status": 302,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "set-cookie": "PHPSESSID=7f7624dd878434f7e18138ac522d97b4; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.3:8081/rest",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "set-cookie": "PHPSESSID=c58f8363508c02c0b62570020c066712; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "content-type": "text/html;charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.3:8081/graphql",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "set-cookie": "PHPSESSID=d9ac1f4a6f128faf0484c9294ac2d275; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "content-type": "text/html;charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.3:8081/swagger-ui.html",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "set-cookie": "PHPSESSID=542fb997b8d2e8bac9b85ae8f04ca8fe; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "content-type": "text/html;charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.3:8081/openapi.json",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "set-cookie": "PHPSESSID=73a5bb92ef15eb63a38814f3897743e7; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "content-type": "text/html;charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.3:8081/v2/api-docs",
+   "status": 302,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "set-cookie": "PHPSESSID=ec9977c32a7c020a62576aedfc3680b1; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.3:8081/.git/HEAD",
+   "status": 200,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.3:8081/robots.txt",
+   "status": 200,
+   "headers": {
+    "content-type": "text/plain; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.3:8081/xmlrpc.php",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "set-cookie": "PHPSESSID=0a24f8331d7d8abfe698f451324aca38; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "content-type": "text/html;charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.3:8081/index.php",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "set-cookie": "PHPSESSID=7a57e278446cc6a4931efe41d5c069e0; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "content-type": "text/html;charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.3:8081/index.jsp",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "set-cookie": "PHPSESSID=7bec73c5ba42b5baeb5a3f76be7aaae4; expires=Fri, 02 Oct 2026 12:32:51 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "content-type": "text/html;charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.3:8081/server-status",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "set-cookie": "PHPSESSID=c5da9c0f61215e4b871302c12c91dcd8; expires=Fri, 02 Oct 2026 12:32:52 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "content-type": "text/html;charset=utf-8"
+   }
+  }
+ ],
+ "webgoat": [
+  {
+   "url": "http://127.0.0.2:8082/",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/wp-json",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/wp-login.php",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/actuator",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/actuator/health",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/api",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/api/v1",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/api/v2",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/rest",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/graphql",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/swagger-ui.html",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/openapi.json",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/v2/api-docs",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/.git/HEAD",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/robots.txt",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/xmlrpc.php",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/index.php",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/index.jsp",
+   "status": 404,
+   "headers": {}
+  },
+  {
+   "url": "http://127.0.0.2:8082/server-status",
+   "status": 404,
+   "headers": {}
+  }
+ ],
+ "wordpress": [
+  {
+   "url": "http://127.0.0.8:8083/",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.8:8083/wp-json",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.8:8083/wp-login.php",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8",
+    "set-cookie": "wordpress_test_cookie=WP%20Cookie%20check; path=/; HttpOnly"
+   }
+  },
+  {
+   "url": "http://127.0.0.8:8083/actuator",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.8:8083/actuator/health",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.8:8083/api",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.8:8083/api/v1",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.8:8083/api/v2",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.8:8083/rest",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.8:8083/graphql",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.8:8083/swagger-ui.html",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.8:8083/openapi.json",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.8:8083/v2/api-docs",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.8:8083/.git/HEAD",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.8:8083/robots.txt",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.8:8083/xmlrpc.php",
+   "status": 405,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/plain;charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.8:8083/index.php",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.8:8083/index.jsp",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.8:8083/server-status",
+   "status": 200,
+   "headers": {
+    "x-powered-by": "PHP/8.4.26",
+    "content-type": "text/html; charset=UTF-8"
+   }
+  }
+ ],
+ "django": [
+  {
+   "url": "http://127.0.0.11:8092/",
+   "status": 200,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8",
+    "set-cookie": "csrftoken=uS5if5xcMWOfynZY3aIaDGHFzmq4rHyB; expires=Thu, 30 Sep 2027 12:33:00 GMT; Max-Age=31449600; Path=/; SameSite=Lax"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/wp-json",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/wp-login.php",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/actuator",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/actuator/health",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/api",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/api/v1",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/api/v2",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/rest",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/graphql",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/swagger-ui.html",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/openapi.json",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/v2/api-docs",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/.git/HEAD",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/robots.txt",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/xmlrpc.php",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/index.php",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/index.jsp",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  },
+  {
+   "url": "http://127.0.0.11:8092/server-status",
+   "status": 404,
+   "headers": {
+    "server": "WSGIServer/0.2 CPython/3.14.7",
+    "content-type": "text/html; charset=utf-8"
+   }
+  }
+ ]
+}

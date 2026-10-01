@@ -10,6 +10,19 @@ use crate::config::Config;
 use crate::dedup::{Signature, SoftNotFoundFilter};
 use crate::ferox::{FeroxArgs, FeroxRunner, FeroxResponse};
 use crate::fingerprint::{self, feature_vector};
+
+/// Bridge feroxbuster's `FeroxResponse` records into the engine's `ProbeResp`
+/// view (the engines live in `ferox-ml-core` and don't know feroxbuster's types).
+fn to_probe_views(resps: &[FeroxResponse]) -> Vec<crate::ProbeResp> {
+    resps
+        .iter()
+        .map(|r| crate::ProbeResp {
+            url: r.url.clone(),
+            status: r.status,
+            headers: r.headers.clone(),
+        })
+        .collect()
+}
 use crate::interfaces::{Classifier, Predictor};
 use crate::markov::MarkovModel;
 use crate::profiles::PROBE_PATHS;
@@ -80,7 +93,7 @@ impl Campaign {
             extract_links: false,
         })?;
 
-        let features = feature_vector(&probe_resps);
+        let features = feature_vector(&to_probe_views(&probe_resps));
         let classifier: Box<dyn Classifier> =
             fingerprint::build(&self.cfg.classifier, self.cfg.seed);
         let (profile, distances) = classifier.classify(&features);
@@ -302,8 +315,8 @@ impl Campaign {
                 all_codes: true,
                 extract_links: false,
             }) {
-                let (profile, _) =
-                    fingerprint::build(&self.cfg.classifier, self.cfg.seed).classify(&feature_vector(&probe));
+                let (profile, _) = fingerprint::build(&self.cfg.classifier, self.cfg.seed)
+                    .classify(&feature_vector(&to_probe_views(&probe)));
                 *summary.profiles.entry(profile).or_insert(0) += 1;
                 for r in &probe {
                     if is_hit(r, &self.cfg) && scope.allows(&r.url) {
