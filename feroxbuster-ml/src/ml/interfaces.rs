@@ -24,4 +24,12 @@ pub trait Scheduler {
     fn update(&mut self, arm: &str, reward: f64);
     /// The arm to expand next, or `None` when every arm is exhausted.
     fn choose(&mut self) -> Option<String>;
+
+    /// Current value estimate for an arm in `[0, 1]` (the posterior mean for a
+    /// Beta bandit, a normalized confidence bound for UCB1). Used to scale how
+    /// much request budget the arm earns. Defaults to a neutral `0.5` for arms
+    /// that don't track a value (e.g. round-robin) or that were never seen.
+    fn value(&self, _arm: &str) -> f64 {
+        0.5
+    }
 }

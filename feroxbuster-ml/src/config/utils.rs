@@ -158,6 +158,37 @@ pub(super) fn extract_links() -> bool {
     true
 }
 
+/// default maximum Markov order for the ML layer
+pub(super) fn ml_order() -> usize {
+    3
+}
+
+/// default number of ML-predicted paths injected per directory
+pub(super) fn ml_predictions() -> usize {
+    25
+}
+
+/// default: BM25-rerank ML predictions against the discovered-path corpus
+pub(super) fn ml_rank() -> bool {
+    true
+}
+
+/// default ML scheduler (bandit that scales per-directory prediction budget)
+pub(super) fn ml_scheduler() -> String {
+    String::from("thompson")
+}
+
+/// default soft-404 / Markov smoothing threshold for the ML layer
+pub(super) fn ml_soft404() -> f64 {
+    0.02
+}
+
+/// default fingerprint confidence margin (minimum centroid-distance gap required
+/// to trust a classification; below it the layer falls back to a generic profile)
+pub(super) fn ml_fp_margin() -> f64 {
+    0.10
+}
+
 /// default max response size to read (4MB to prevent OOM issues)
 pub(super) fn response_size_limit() -> usize {
     4 * 1024 * 1024 // 4MB in bytes

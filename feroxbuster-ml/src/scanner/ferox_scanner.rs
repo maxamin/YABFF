@@ -375,6 +375,43 @@ impl FeroxScanner {
         )
         .await;
 
+        // ML layer: inject per-directory Markov predictions for THIS directory's
+        // context as an extra bounded request pass. Each recursed directory is its
+        // own FeroxScanner with its own target_url, so predictions are genuinely
+        // per-directory; they're BM25-reranked against paths discovered so far and
+        // their count is scaled by the bandit using this directory's hit-rate
+        // (base wordlist length = the base pass just completed above).
+        if self.handles.config.ml {
+            let predicted = crate::ml::predict_for_scan(&self.target_url, self.wordlist.len());
+            if !predicted.is_empty() {
+                let multiplier = self.handles.expected_num_requests_multiplier() as u64;
+                let cur_length = progress_bar.length().unwrap_or(0);
+                progress_bar.set_length(cur_length + predicted.len() as u64 * multiplier);
+
+                self.handles
+                    .stats
+                    .send(AddToUsizeField(
+                        TotalExpected,
+                        predicted.len() * multiplier as usize,
+                    ))
+                    .unwrap_or_default();
+
+                log::info!(
+                    "ML layer: requesting {} predicted paths under {}",
+                    predicted.len(),
+                    self.target_url
+                );
+
+                self.stream_requests(
+                    Arc::new(predicted),
+                    progress_bar.clone(),
+                    scanned_urls.clone(),
+                    requester.clone(),
+                )
+                .await;
+            }
+        }
+
         if self.handles.config.collect_words {
             let new_words = TF_IDF.read().unwrap().all_words();
             let new_words_len = new_words.len();

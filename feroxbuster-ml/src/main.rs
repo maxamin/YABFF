@@ -313,34 +313,63 @@ async fn wrapped_main(config: Arc<Configuration>) -> Result<()> {
         // predicted paths into the wordlist that feroxbuster will actually scan.
         if config.ml && !config.target_url.is_empty() {
             let base = config.target_url.trim_end_matches('/').to_string();
-            let mut probes = Vec::new();
-            for p in feroxbuster::ml::probe_paths() {
+
+            // probe all discriminating paths concurrently (one round-trip instead
+            // of one-at-a-time); a failed probe becomes a status-0 ProbeResp so the
+            // confidence gate can tell "blind" from "classified".
+            let probe_futs = feroxbuster::ml::probe_paths().iter().map(|p| {
                 let url = format!("{base}/{p}");
-                if let Ok(resp) = config.client.get(&url).send().await {
-                    let status = resp.status().as_u16();
-                    let mut headers = std::collections::HashMap::new();
-                    for (k, v) in resp.headers() {
-                        if let Ok(val) = v.to_str() {
-                            headers.insert(k.as_str().to_string(), val.to_string());
+                let client = config.client.clone();
+                async move {
+                    match client.get(&url).send().await {
+                        Ok(resp) => {
+                            let status = resp.status().as_u16();
+                            let mut headers = std::collections::HashMap::new();
+                            for (k, v) in resp.headers() {
+                                if let Ok(val) = v.to_str() {
+                                    headers.insert(k.as_str().to_string(), val.to_string());
+                                }
+                            }
+                            feroxbuster::ml::ProbeResp {
+                                url,
+                                status,
+                                headers,
+                            }
                         }
+                        Err(_) => feroxbuster::ml::ProbeResp {
+                            url,
+                            status: 0,
+                            headers: std::collections::HashMap::new(),
+                        },
                     }
-                    probes.push(feroxbuster::ml::ProbeResp {
-                        url,
-                        status,
-                        headers,
-                    });
                 }
-            }
-            let (profile, _dists) = feroxbuster::ml::fingerprint(&probes);
-            feroxbuster::ml::init(&profile, &config.ml_model, 3, 0.5, 0.02);
+            });
+            let probes: Vec<_> = futures::future::join_all(probe_futs).await;
+
+            let (profile, confident) =
+                feroxbuster::ml::fingerprint_gated(&probes, config.ml_fp_margin);
+            let params = feroxbuster::ml::MlParams {
+                max_order: config.ml_order,
+                alpha: 0.5,
+                threshold: config.ml_soft404,
+                predictions: config.ml_predictions,
+                rank: config.ml_rank,
+                scheduler: config.ml_scheduler.clone(),
+                seed: 1,
+            };
+            feroxbuster::ml::init(&profile, &config.ml_model, &params);
             let mut added = 0usize;
-            for w in feroxbuster::ml::predict_words("", 25) {
+            for w in feroxbuster::ml::predict_words("", config.ml_predictions) {
                 if seen.insert(w.clone()) {
                     words.push(w);
                     added += 1;
                 }
             }
-            log::info!("ML layer: profile={profile}, injected {added} predicted paths");
+            log::info!(
+                "ML layer: profile={profile} (confident={confident}), scheduler={}, \
+                 seeded {added} paths; per-directory predictions on",
+                config.ml_scheduler
+            );
         }
 
         Arc::new(words)

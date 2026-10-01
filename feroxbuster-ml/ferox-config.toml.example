@@ -83,3 +83,34 @@
 # [headers]
 # stuff = "things"
 # more = "headers"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Native ML layer (feroxbuster-ml fork)
+# ──────────────────────────────────────────────────────────────────────────────
+# Enable the ML layer: fingerprint the target, seed a Markov model, and inject
+# per-directory path predictions (BM25-reranked, budget scaled by a bandit).
+# ml = true
+
+# Load/update a persisted model (merged onto the profile seed, saved on exit).
+# Setting this implies ml = true.
+# ml_model = "/path/to/model.json"
+
+# Maximum Markov order (PPM back-off depth). Higher = longer path contexts.
+# ml_order = 3
+
+# Base number of predictions injected per directory (scaled 25%-100% by the
+# bandit based on each directory's hit-rate).
+# ml_predictions = 25
+
+# BM25-rerank predictions against the paths discovered so far.
+# ml_rank = true
+
+# Bandit that scales per-directory prediction budget: "thompson" | "ucb1" | "round_robin"
+# ml_scheduler = "thompson"
+
+# Markov additive-smoothing / low-probability prune threshold.
+# ml_soft404 = 0.02
+
+# Minimum centroid-distance gap required to trust a fingerprint; below it the
+# layer falls back to a generic profile (LEGACY_STATIC).
+# ml_fp_margin = 0.10

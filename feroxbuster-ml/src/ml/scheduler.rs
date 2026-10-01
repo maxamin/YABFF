@@ -85,6 +85,14 @@ impl Scheduler for ThompsonScheduler {
         self.retire(&chosen);
         Some(chosen)
     }
+
+    fn value(&self, arm: &str) -> f64 {
+        match self.arms.get(arm) {
+            // posterior mean of the Beta(alpha, beta) hit-rate estimate
+            Some(b) => b.alpha / (b.alpha + b.beta),
+            None => 0.5,
+        }
+    }
 }
 
 // ------------------------------- UCB1 -------------------------------
@@ -165,6 +173,14 @@ impl Scheduler for Ucb1Scheduler {
         }
         Some(chosen)
     }
+
+    fn value(&self, arm: &str) -> f64 {
+        match self.arms.get(arm) {
+            // mean observed reward so far; unpulled arms are neutral
+            Some(a) if a.pulls > 0.0 => (a.reward_sum / a.pulls).clamp(0.0, 1.0),
+            _ => 0.5,
+        }
+    }
 }
 
 // ---------------------------- Round robin ----------------------------
@@ -211,7 +227,7 @@ impl Scheduler for RoundRobinScheduler {
 }
 
 /// Build the scheduler named in the config.
-pub fn build(name: &str, seed: u64) -> Box<dyn Scheduler> {
+pub fn build(name: &str, seed: u64) -> Box<dyn Scheduler + Send + Sync> {
     match name {
         "ucb1" => Box::new(Ucb1Scheduler::new()),
         "round_robin" => Box::new(RoundRobinScheduler::new()),

@@ -657,6 +657,34 @@ pub fn initialize() -> Command {
                 .num_args(1)
                 .help_heading("Scan settings")
                 .help("Path to a learned ML model to load and update (implies --ml)")
+        ).arg(
+            Arg::new("ml_order")
+                .long("ml-order")
+                .value_name("ORDER")
+                .num_args(1)
+                .help_heading("Scan settings")
+                .help("Maximum Markov order for the ML predictor (default: 3)")
+        ).arg(
+            Arg::new("ml_predictions")
+                .long("ml-predictions")
+                .value_name("COUNT")
+                .num_args(1)
+                .help_heading("Scan settings")
+                .help("Number of ML-predicted paths injected per directory (default: 25)")
+        ).arg(
+            Arg::new("ml_scheduler")
+                .long("ml-scheduler")
+                .value_name("SCHEDULER")
+                .num_args(1)
+                .value_parser(["thompson", "ucb1", "round_robin"])
+                .help_heading("Scan settings")
+                .help("Bandit that scales per-directory prediction budget (default: thompson)")
+        ).arg(
+            Arg::new("no_ml_rank")
+                .long("no-ml-rank")
+                .num_args(0)
+                .help_heading("Scan settings")
+                .help("Disable BM25 re-ranking of ML predictions against the discovered-path corpus")
         );
 
     /////////////////////////////////////////////////////////////////////

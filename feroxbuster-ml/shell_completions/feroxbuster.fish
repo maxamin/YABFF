@@ -38,6 +38,11 @@ complete -c feroxbuster -s w -l wordlist -d 'Path(s) or URL(s) of the wordlist(s
 complete -c feroxbuster -s B -l collect-backups -d 'Automatically request likely backup extensions for "found" urls (default: ~, .bak, .bak2, .old, .1)' -r
 complete -c feroxbuster -s I -l dont-collect -d 'File extension(s) to Ignore while collecting extensions (only used with --collect-extensions)' -r
 complete -c feroxbuster -l ml-model -d 'Path to a learned ML model to load and update (implies --ml)' -r -F
+complete -c feroxbuster -l ml-order -d 'Maximum Markov order for the ML predictor (default: 3)' -r
+complete -c feroxbuster -l ml-predictions -d 'Number of ML-predicted paths injected per directory (default: 25)' -r
+complete -c feroxbuster -l ml-scheduler -d 'Bandit that scales per-directory prediction budget (default: thompson)' -r -f -a "thompson\t''
+ucb1\t''
+round_robin\t''"
 complete -c feroxbuster -s o -l output -d 'Output file to write results to (use w/ --json for JSON entries)' -r -F
 complete -c feroxbuster -l debug-log -d 'Output file to write log entries (use w/ --json for JSON entries)' -r -F
 complete -c feroxbuster -l limit-bars -d 'Number of directory scan bars to show at any given time (default: no limit)' -r
@@ -62,6 +67,7 @@ complete -c feroxbuster -s E -l collect-extensions -d 'Automatically discover ex
 complete -c feroxbuster -s g -l collect-words -d 'Automatically discover important words from within responses and add them to the wordlist'
 complete -c feroxbuster -l scan-dir-listings -d 'Force scans to recurse into directory listings'
 complete -c feroxbuster -l ml -d 'Enable the native ML layer: fingerprint the target and inject Markov-predicted paths into the scan, learning online'
+complete -c feroxbuster -l no-ml-rank -d 'Disable BM25 re-ranking of ML predictions against the discovered-path corpus'
 complete -c feroxbuster -s v -l verbosity -d 'Increase verbosity level (use -vv or more for greater effect. [CAUTION] 4 -v\'s is probably too much)'
 complete -c feroxbuster -l silent -d 'Only print URLs (or JSON w/ --json) + turn off logging (good for piping a list of urls to other commands)'
 complete -c feroxbuster -s q -l quiet -d 'Hide progress bars and banner (good for tmux windows w/ notifications)'
