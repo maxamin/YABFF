@@ -56,6 +56,13 @@ pub fn is_catch_all(probes: &[ProbeResp]) -> bool {
     ferox_ml_core::fingerprint::is_catch_all(probes)
 }
 
+/// E5 — calibrated confidence: the best profile for these probes plus its
+/// softmax probability in `[0, 1]` (not a raw distance/margin).
+pub fn classify_confidence(probes: &[ProbeResp]) -> (String, f64) {
+    let fv = ferox_ml_core::fingerprint::feature_vector(probes);
+    ferox_ml_core::fingerprint::classify_confidence(&fv)
+}
+
 /// E2 per-path soft-404 scoring: learn the soft-404 baseline from probes to
 /// random, almost-certainly-absent paths, then demote any discriminating probe
 /// whose response matches that baseline to status 404 (so a catch-all's uniform
@@ -142,6 +149,14 @@ struct MlState {
     predictions: usize,
     /// Whether to BM25-rerank predictions.
     rank: bool,
+    /// E6 — online re-fingerprinting from paths discovered during the scan.
+    tracker: ferox_ml_core::fingerprint::ProfileTracker,
+    /// The profile currently seeded into `model` (updated when E6 corrects it).
+    active_profile: String,
+    /// Markov params, kept so a corrected profile's seed can be merged mid-scan.
+    order: usize,
+    alpha: f64,
+    threshold: f64,
 }
 
 /// Directory key for a URL: its lowercased, slash-joined path segments.
@@ -177,6 +192,11 @@ pub fn init(profile: &str, model_path: &str, params: &MlParams) {
             hits_by_dir: HashMap::new(),
             predictions: params.predictions,
             rank: params.rank,
+            tracker: ferox_ml_core::fingerprint::ProfileTracker::new(profile),
+            active_profile: profile.to_string(),
+            order: params.max_order,
+            alpha: params.alpha,
+            threshold: params.threshold,
         });
     }
 }
@@ -216,6 +236,24 @@ pub fn observe(url: &str) {
                 state.bm25.add_document(&seg);
             }
             *state.hits_by_dir.entry(parent_key(url)).or_insert(0) += 1;
+
+            // E6 — online re-fingerprinting: if discovered paths now point at a
+            // different profile than the one we seeded, merge that profile's seed
+            // into the live model (additive, so nothing learned is lost).
+            state.tracker.observe_path(url);
+            if let Some(corrected) = state.tracker.corrected() {
+                if corrected != state.active_profile {
+                    let seed = MarkovModel::seeded(
+                        &corrected,
+                        state.order,
+                        state.alpha,
+                        state.threshold,
+                    );
+                    state.model.merge(&seed);
+                    log::info!("ML layer: re-fingerprinted {} -> {corrected}", state.active_profile);
+                    state.active_profile = corrected;
+                }
+            }
         }
     }
 }

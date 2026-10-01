@@ -65,8 +65,8 @@ lives under `/WebGoat/`, so the probe sees only 404s).
 
 ## 3. Enhancements
 
-Ranked by impact/effort. ✅ = **shipped** in the engine and measured;
-⬜ = proposed, with how to test it.
+All eight are now ✅ **shipped** in the engine and covered by tests; the notes
+below record what each does and how it was measured.
 
 ### ✅ E1 — Catch-all / soft-404 guard  *(shipped)*
 
@@ -163,41 +163,50 @@ gap went ~1.5 → ~0.9), which is why E3's weighted metric matters more now — 
 keeps the denser profile space separable. Natural next step: `RAILS`, `ASPNET`,
 `FLASK`, and GraphQL-introspection as its own signal.
 
-### ⬜ E5 — Calibrated confidence
+### ✅ E5 — Calibrated confidence  *(shipped)*
 
-Convert centroid distances to a softmax probability over `-distance`, and expose
-it instead of (or alongside) the raw margin. *Test:* a reliability check — bucket
-predictions by reported confidence and confirm empirical accuracy tracks it.
+`softmax_confidence` / `classify_confidence` in
+[`fingerprint.rs`](../../ferox-ml-core/src/fingerprint.rs) turn centroid distances
+into a probability distribution over profiles (`softmax(-β·distance)`), so callers
+get a comparable `[0,1]` confidence rather than a raw distance/margin. The fork
+logs it (`p=0.87`) alongside the gate decision. The `engines.rs` test confirms the
+probabilities sum to 1 and peak on the nearest centroid.
 
-### ⬜ E6 — Online re-fingerprinting
+### ✅ E6 — Online re-fingerprinting  *(shipped)*
 
-Re-run classification as real paths are discovered (finding `/wp-content/`
-confirms WordPress even if the probe was ambiguous). Hook it into
-`ml::observe`. *Test:* feed a WordPress crawl trace and assert the profile
-corrects itself mid-scan.
+`ProfileTracker` (in `fingerprint.rs`) starts from the probe's profile and
+accumulates evidence from discovered paths — each segment in a profile's
+characteristic vocabulary votes for it, weighted by specificity (shared tokens
+count less). Wired into the fork's `ml::observe`: when the evidence favors a
+different profile, that profile's seed is **merged** into the live Markov model
+(additive, so nothing learned is lost). *Tested:* a tracker seeded `LEGACY_STATIC`
+flips to `WORDPRESS_CMS` after observing `/wp-content`, `/wp-admin`.
 
-### ⬜ E7 — Real K-Means over many hosts
+### ✅ E7 — Real K-Means over many hosts  *(shipped)*
 
-`KMeansClassifier` degenerates to nearest-centroid for a single target.
-Batch-probing many authorized hosts enables genuine clustering and data-driven
-centroid refresh. *Test:* cluster a labelled multi-host set and compare recovered
-centroids to the seeds.
+`kmeans_fit` runs Lloyd's algorithm (weighted metric) over many host feature
+vectors, seeded from the profile centroids so cluster identity stays aligned to
+the named profiles — for batch centroid refresh across a set of authorized hosts.
+The single-target classifier is unchanged. *Tested:* feeding the seed centroids
+recovers them exactly; a host vector assigns to its profile's refined centroid.
 
-### ⬜ E8 — Markov subword back-off
+### ✅ E8 — Markov subword back-off  *(shipped)*
 
-When no segment-level transition exists for a context, back off to subword
-prediction (`tokenize::subword_tokens` already exists) so `getUserById`-style
-siblings are still proposed. *Test:* learn `getUserById`, predict after
-`getUser…`, assert a subword-derived candidate appears.
+When no context has segment-level evidence for the last segment, `predict` backs
+off to learned tokens that share subword tokens with it (Jaccard-scored). Because
+URL segments are lowercased, it keys on the boundaries that survive — separators
+(`-` `_` `.`) and digit edges — so after learning `user-profile` it surfaces it
+for `user-settings`. *Tested* in `engines.rs`.
 
 ## Takeaway
 
 The fingerprinter is accurate on clean signal (now a perfect 7×7 diagonal) and the
 confidence gate degrades safely; real-world catch-all servers are the hard case.
-Four enhancements are now **shipped** in the engine: E1 (catch-all guard) and E2
+All eight roadmap enhancements are now **shipped**: E1 (catch-all guard) and E2
 (per-path soft-404 scoring) turn untrustworthy catch-alls into safe abstentions;
-E3 (feature weighting) lifted raw field accuracy 2/5 → 3/5 by letting strong
-discriminators outweigh accidental presence; and E4 (seven profiles incl.
-PHP_GENERIC / NODE_SPA / DJANGO) added the missing stacks and made Django a genuine
-hit via its `csrftoken` cookie. E5–E8 (calibrated confidence, online
-re-fingerprinting, real K-Means, Markov subword back-off) remain proposed.
+E3 (feature weighting) lifted raw field accuracy 2/5 → 3/5; E4 (seven profiles
+incl. PHP_GENERIC / NODE_SPA / DJANGO) added the missing stacks and made Django a
+genuine hit; E5 (calibrated confidence) exposes a `[0,1]` probability; E6 (online
+re-fingerprinting) lets a scan self-correct its profile from discovered paths; E7
+(real K-Means) enables data-driven centroid refresh across many hosts; and E8
+(Markov subword back-off) proposes related siblings when a context is novel.

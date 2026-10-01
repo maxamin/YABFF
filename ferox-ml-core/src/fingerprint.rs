@@ -12,7 +12,9 @@
 
 use crate::ProbeResp;
 use crate::interfaces::Classifier;
-use crate::profiles::{centroids, FEATURE_WEIGHTS, N_FEATURES, PROBE_PATHS};
+use std::collections::{HashMap, HashSet};
+
+use crate::profiles::{centroids, seed_matrix, FEATURE_WEIGHTS, N_FEATURES, PROBE_PATHS, PROFILES};
 use crate::tokenize::path_segments;
 
 /// Normalize a URL to its slash-joined path segments, lowercased.
@@ -153,6 +155,85 @@ pub fn classify_with_weights(features: &[f64], weights: &[f64]) -> (String, Vec<
     (best, dists)
 }
 
+/// Default softmax temperature for [`softmax_confidence`] — sharp enough that a
+/// clear match reads as high confidence, soft enough that a near-tie reads as low.
+pub const DEFAULT_CONFIDENCE_BETA: f64 = 2.0;
+
+/// E5 — calibrated confidence. Turn centroid *distances* into a probability
+/// distribution over profiles via `softmax(-beta * distance)`, so callers get a
+/// comparable `[0,1]` confidence rather than a raw distance or margin. The nearest
+/// centroid gets the highest probability; a near-tie spreads mass across profiles.
+/// Returns `(profile, probability)` pairs, highest probability first.
+pub fn softmax_confidence(dists: &[(String, f64)], beta: f64) -> Vec<(String, f64)> {
+    if dists.is_empty() {
+        return vec![];
+    }
+    // subtract the min distance for numerical stability (shift-invariant)
+    let min = dists.iter().map(|(_, d)| *d).fold(f64::INFINITY, f64::min);
+    let exps: Vec<f64> = dists.iter().map(|(_, d)| (-beta * (d - min)).exp()).collect();
+    let sum: f64 = exps.iter().sum();
+    let mut out: Vec<(String, f64)> = dists
+        .iter()
+        .zip(exps)
+        .map(|((n, _), e)| (n.clone(), e / sum))
+        .collect();
+    out.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    out
+}
+
+/// E5 — classify and return the top profile with its calibrated probability.
+pub fn classify_confidence(features: &[f64]) -> (String, f64) {
+    let (_, dists) = classify_with_weights(features, &FEATURE_WEIGHTS);
+    softmax_confidence(&dists, DEFAULT_CONFIDENCE_BETA)
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| ("LEGACY_STATIC".to_string(), 0.0))
+}
+
+/// E7 — fit `k = PROFILES.len()` centroids over many host feature vectors with
+/// Lloyd's algorithm, seeded from the profile [`centroids`] (so cluster identity
+/// stays aligned to the named profiles). Returns refined `(profile, centroid)`
+/// pairs for batch analysis / data-driven centroid refresh across a set of
+/// authorized hosts; the single-target classifier is unchanged. Empty clusters
+/// keep their seed centroid.
+pub fn kmeans_fit(
+    vectors: &[[f64; N_FEATURES]],
+    iters: usize,
+    weights: &[f64],
+) -> Vec<(&'static str, [f64; N_FEATURES])> {
+    let seeds = centroids();
+    let names: Vec<&'static str> = seeds.iter().map(|(n, _)| *n).collect();
+    let mut cents: Vec<[f64; N_FEATURES]> = seeds.iter().map(|(_, c)| *c).collect();
+    if vectors.is_empty() {
+        return names.into_iter().zip(cents).collect();
+    }
+    for _ in 0..iters {
+        let mut sums = vec![[0.0f64; N_FEATURES]; cents.len()];
+        let mut counts = vec![0usize; cents.len()];
+        for v in vectors {
+            let ci = cents
+                .iter()
+                .enumerate()
+                .map(|(i, c)| (i, weighted_euclidean(v, c, weights)))
+                .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+                .map(|(i, _)| i)
+                .unwrap();
+            for d in 0..N_FEATURES {
+                sums[ci][d] += v[d];
+            }
+            counts[ci] += 1;
+        }
+        for i in 0..cents.len() {
+            if counts[i] > 0 {
+                for d in 0..N_FEATURES {
+                    cents[i][d] = sums[i][d] / counts[i] as f64;
+                }
+            }
+        }
+    }
+    names.into_iter().zip(cents).collect()
+}
+
 /// A server is treated as a catch-all / soft-404 responder when it answers
 /// (non-404) to more than this fraction of the discriminating probe paths.
 pub const CATCH_ALL_PRESENT_FRACTION: f64 = 0.7;
@@ -254,6 +335,95 @@ impl Classifier for KMeansClassifier {
         // With one observation the Lloyd assignment step is nearest-centroid.
         let _ = self.seed;
         NearestCentroid.classify(features)
+    }
+}
+
+/// The characteristic path vocabulary of a profile (its seed matrix's `from` and
+/// `to` tokens).
+fn profile_vocab(profile: &str) -> HashSet<String> {
+    let mut v = HashSet::new();
+    for (from, tos) in seed_matrix(profile) {
+        if !from.is_empty() {
+            v.insert(from.to_string());
+        }
+        for (to, _) in tos {
+            v.insert(to.to_string());
+        }
+    }
+    v
+}
+
+/// E6 — online re-fingerprinting. Starts from the probe's initial profile and
+/// accumulates evidence from paths discovered during the scan: each discovered
+/// segment that belongs to a profile's characteristic vocabulary votes for it,
+/// weighted by specificity (a token shared by many profiles counts less). So a
+/// scan can correct an ambiguous initial guess — e.g. discovering `/wp-content`,
+/// `/wp-admin` flips an unsure target to `WORDPRESS_CMS`.
+pub struct ProfileTracker {
+    votes: HashMap<String, f64>,
+    vocab: HashMap<&'static str, HashSet<String>>,
+    /// how many profiles each token appears in (for specificity weighting)
+    doc_freq: HashMap<String, usize>,
+    initial: String,
+}
+
+impl ProfileTracker {
+    /// Start from the initial (probe) profile, which is given a prior vote.
+    pub fn new(initial: &str) -> Self {
+        let vocab: HashMap<&'static str, HashSet<String>> =
+            PROFILES.iter().map(|p| (*p, profile_vocab(p))).collect();
+        let mut doc_freq: HashMap<String, usize> = HashMap::new();
+        for set in vocab.values() {
+            for tok in set {
+                *doc_freq.entry(tok.clone()).or_insert(0) += 1;
+            }
+        }
+        let mut votes = HashMap::new();
+        votes.insert(initial.to_string(), 1.0); // prior for the probe's guess
+        Self {
+            votes,
+            vocab,
+            doc_freq,
+            initial: initial.to_string(),
+        }
+    }
+
+    /// Fold a discovered URL's path segments into the per-profile evidence.
+    pub fn observe_path(&mut self, path: &str) {
+        for seg in path_segments(path) {
+            let df = *self.doc_freq.get(&seg).unwrap_or(&0);
+            if df == 0 {
+                continue; // not characteristic of any profile
+            }
+            let weight = 1.0 / df as f64; // specific tokens count more
+            for p in PROFILES {
+                if self.vocab[p].contains(&seg) {
+                    *self.votes.entry(p.to_string()).or_insert(0.0) += weight;
+                }
+            }
+        }
+    }
+
+    /// The profile with the most accumulated evidence (ties keep the initial).
+    pub fn current(&self) -> String {
+        let initial_score = *self.votes.get(&self.initial).unwrap_or(&0.0);
+        self.votes
+            .iter()
+            .fold((self.initial.clone(), initial_score), |(bn, bs), (n, s)| {
+                if *s > bs {
+                    (n.clone(), *s)
+                } else {
+                    (bn, bs)
+                }
+            })
+            .0
+    }
+
+    /// `Some(profile)` if accumulated evidence now favors a different profile than
+    /// the initial probe guess — the signal to re-seed mid-scan.
+    pub fn corrected(&self) -> Option<String> {
+        let now = self.current();
+        (now != self.initial).then_some(now)
     }
 }
 

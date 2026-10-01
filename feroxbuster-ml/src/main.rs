@@ -366,6 +366,7 @@ async fn wrapped_main(config: Arc<Configuration>) -> Result<()> {
 
             let (profile, confident) =
                 feroxbuster::ml::fingerprint_gated(&probes, config.ml_fp_margin);
+            let (_, confidence) = feroxbuster::ml::classify_confidence(&probes);
             let params = feroxbuster::ml::MlParams {
                 max_order: config.ml_order,
                 alpha: 0.5,
@@ -384,9 +385,9 @@ async fn wrapped_main(config: Arc<Configuration>) -> Result<()> {
                 }
             }
             log::info!(
-                "ML layer: profile={profile} (confident={confident}), scheduler={}, \
-                 seeded {added} paths; soft-404 demoted {demoted} probe(s); \
-                 per-directory predictions on",
+                "ML layer: profile={profile} (confident={confident}, p={confidence:.2}), \
+                 scheduler={}, seeded {added} paths; soft-404 demoted {demoted} probe(s); \
+                 per-directory predictions + online re-fingerprinting on",
                 config.ml_scheduler
             );
         }

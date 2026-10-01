@@ -4,8 +4,9 @@
 
 use ferox_ml_core::dedup::{hamming, simhash, Signature, SoftNotFoundFilter};
 use ferox_ml_core::fingerprint::{
-    self, apply_soft_404, classify_with_weights, feature_vector, has_strong_discriminator,
-    is_catch_all, learn_soft_404, present_fraction, NearestCentroid,
+    self, apply_soft_404, classify_confidence, classify_with_weights, feature_vector,
+    has_strong_discriminator, is_catch_all, kmeans_fit, learn_soft_404, present_fraction,
+    softmax_confidence, NearestCentroid, ProfileTracker,
 };
 use ferox_ml_core::interfaces::{Classifier, Predictor, Scheduler};
 use ferox_ml_core::markov::MarkovModel;
@@ -220,6 +221,87 @@ fn e3_weighting_is_applied_and_resists_accidental_noise() {
         dist(&FEATURE_WEIGHTS, "REST_API"),
         dist(&[1.0; 18], "REST_API"),
         "weighting must change the distance metric"
+    );
+}
+
+#[test]
+fn e5_calibrated_confidence_is_a_distribution_peaked_on_the_match() {
+    // a clear WordPress vector
+    let mut wp = ProbeResp::new("https://x/wp-json", 200);
+    wp.headers.insert("set-cookie".into(), "wordpress_x=1".into());
+    let probes = vec![
+        wp,
+        ProbeResp::new("https://x/wp-login.php", 200),
+        ProbeResp::new("https://x/xmlrpc.php", 405),
+    ];
+    let (_, dists) = classify_with_weights(&feature_vector(&probes), &[1.0; 20]);
+    let probs = softmax_confidence(&dists, 2.0);
+    // a probability distribution: sums to 1, each in [0,1]
+    let sum: f64 = probs.iter().map(|(_, p)| *p).sum();
+    assert!((sum - 1.0).abs() < 1e-9, "sum={sum}");
+    assert!(probs.iter().all(|(_, p)| (0.0..=1.0).contains(p)));
+    // peaked on the correct profile
+    let (top, conf) = classify_confidence(&feature_vector(&probes));
+    assert_eq!(top, "WORDPRESS_CMS");
+    assert_eq!(top, probs[0].0, "top prob matches nearest centroid");
+    assert!(conf > 0.3 && conf <= 1.0, "confidence {conf}");
+}
+
+#[test]
+fn e6_profile_tracker_self_corrects_from_discovered_paths() {
+    // start from an unsure/generic guess, then discover WordPress structure
+    let mut t = ProfileTracker::new("LEGACY_STATIC");
+    assert_eq!(t.current(), "LEGACY_STATIC");
+    assert_eq!(t.corrected(), None);
+    for url in [
+        "https://x/wp-content",
+        "https://x/wp-content/plugins",
+        "https://x/wp-admin",
+    ] {
+        t.observe_path(url);
+    }
+    assert_eq!(t.current(), "WORDPRESS_CMS", "should re-fingerprint to WordPress");
+    assert_eq!(t.corrected(), Some("WORDPRESS_CMS".to_string()));
+}
+
+#[test]
+fn e7_kmeans_recovers_seed_centroids() {
+    // feeding each profile's own centroid as a point: every cluster keeps its seed
+    let seeds: Vec<[f64; 20]> = centroids().into_iter().map(|(_, c)| c).collect();
+    let fitted = kmeans_fit(&seeds, 10, &[1.0; 20]);
+    assert_eq!(fitted.len(), centroids().len());
+    for ((name, got), (sname, seed)) in fitted.iter().zip(centroids()) {
+        assert_eq!(*name, sname);
+        let drift: f64 = got.iter().zip(seed).map(|(a, b)| (a - b).abs()).sum();
+        assert!(drift < 1e-6, "{name} centroid drifted {drift}");
+    }
+    // a REST-like point assigns to the refined REST centroid
+    let rest = seeds[0];
+    let nearest = fitted
+        .iter()
+        .min_by(|a, b| {
+            let da: f64 = a.1.iter().zip(rest).map(|(x, y)| (x - y) * (x - y)).sum();
+            let db: f64 = b.1.iter().zip(rest).map(|(x, y)| (x - y) * (x - y)).sum();
+            da.partial_cmp(&db).unwrap()
+        })
+        .unwrap()
+        .0;
+    assert_eq!(nearest, "REST_API");
+}
+
+#[test]
+fn e8_markov_subword_backoff_surfaces_related_learned_token() {
+    use ferox_ml_core::interfaces::Predictor;
+    let mut m = MarkovModel::new(3, 0.5, 0.0);
+    // URL path segments are lowercased, so subword back-off keys on the boundaries
+    // that survive — separators (-, _, .) and digit edges — not camelCase.
+    m.learn("https://x/app/user-profile");
+    // a novel sibling segment with no context-specific row backs off to a subword
+    // match (shared "user") on the learned token
+    let preds = m.predict("https://x/app/user-settings", 5);
+    assert!(
+        preds.iter().any(|(t, _)| t == "user-profile"),
+        "subword back-off should surface user-profile, got {preds:?}"
     );
 }
 

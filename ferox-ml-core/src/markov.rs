@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::interfaces::Predictor;
 use crate::profiles;
-use crate::tokenize::path_segments;
+use crate::tokenize::{path_segments, subword_tokens};
 
 #[derive(Debug, Clone)]
 pub struct MarkovModel {
@@ -159,6 +159,40 @@ impl MarkovModel {
         out
     }
 
+    /// E8 — subword back-off. When no context has segment-level evidence for the
+    /// last recent segment, surface learned tokens that share subword tokens with
+    /// it (e.g. after `getUser…`, a previously-learned `getUserById`). Scored by
+    /// subword Jaccard overlap, highest first.
+    fn subword_candidates(&self, recent: &[String], top_n: usize) -> Vec<(String, f64)> {
+        let Some(last) = recent.last() else {
+            return vec![];
+        };
+        let q: std::collections::HashSet<String> = subword_tokens(last).into_iter().collect();
+        if q.is_empty() {
+            return vec![];
+        }
+        let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        let mut scored: Vec<(String, f64)> = Vec::new();
+        for row in self.rows.values() {
+            for tok in row.keys() {
+                if tok == last || !seen.insert(tok.as_str()) {
+                    continue;
+                }
+                let t: std::collections::HashSet<String> =
+                    subword_tokens(tok).into_iter().collect();
+                let inter = q.intersection(&t).count();
+                if inter == 0 {
+                    continue;
+                }
+                let union = q.union(&t).count().max(1);
+                scored.push((tok.clone(), inter as f64 / union as f64));
+            }
+        }
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
+        scored.truncate(top_n);
+        scored
+    }
+
     pub fn to_json(&self) -> anyhow::Result<String> {
         let dto = MarkovDto {
             rows: self
@@ -191,7 +225,28 @@ impl MarkovModel {
 impl Predictor for MarkovModel {
     fn predict(&self, path: &str, top_n: usize) -> Vec<(String, f64)> {
         let recent = path_segments(path);
-        self.predict_tokens(&recent, top_n)
+        let mut out = self.predict_tokens(&recent, top_n);
+        // E8 subword back-off: if there's no context-specific evidence for the last
+        // segment (no prediction, or we had to back off below the full context),
+        // offer learned tokens that share subwords with it.
+        let backed_off = self
+            .best_context(&recent)
+            .map(|c| c.len())
+            .unwrap_or(0)
+            < recent.len();
+        if out.len() < top_n && (out.is_empty() || backed_off) {
+            let have: std::collections::HashSet<String> =
+                out.iter().map(|(t, _)| t.clone()).collect();
+            for cand in self.subword_candidates(&recent, top_n) {
+                if out.len() >= top_n {
+                    break;
+                }
+                if !have.contains(&cand.0) {
+                    out.push(cand);
+                }
+            }
+        }
+        out
     }
 
     fn learn(&mut self, path: &str) {
