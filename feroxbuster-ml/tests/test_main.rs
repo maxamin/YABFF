@@ -11,6 +11,20 @@ use utils::{setup_tmp_directory, teardown_tmp_directory};
 #[test]
 /// send the function a file to which we dont have permission in order to execute error branch
 fn main_use_root_owned_file_as_wordlist() {
+    // This exercises the "could not open the wordlist" branch by pointing
+    // feroxbuster at a file we cannot read (/etc/shadow). Running as root defeats
+    // the premise — root bypasses file permissions, and no file is unreadable by
+    // root — so the error branch is unreachable. Skip rather than assert a
+    // permission error that can't occur here; the assertion still runs for the
+    // (CI-typical) unprivileged case.
+    if std::fs::File::open("/etc/shadow").is_ok() {
+        eprintln!(
+            "skipping main_use_root_owned_file_as_wordlist: can read /etc/shadow \
+             (running privileged); the unreadable-wordlist branch is unreachable"
+        );
+        return;
+    }
+
     let srv = MockServer::start();
 
     let mock = srv.mock(|when, then| {
