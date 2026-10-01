@@ -1,0 +1,105 @@
+[package]
+name = "feroxbuster"
+version = "2.13.1"
+authors = ["Ben 'epi' Risher (@epi052)"]
+license = "MIT"
+edition = "2021"
+homepage = "https://github.com/epi052/feroxbuster"
+repository = "https://github.com/epi052/feroxbuster"
+description = "A fast, simple, recursive content discovery tool."
+categories = ["command-line-utilities"]
+keywords = [
+    "pentest",
+    "enumeration",
+    "url-bruteforce",
+    "content-discovery",
+    "web",
+]
+exclude = [".github/*", "img/*", "check-coverage.sh"]
+build = "build.rs"
+
+[badges]
+maintenance = { status = "actively-developed" }
+
+[build-dependencies]
+clap = { version = "4.5", features = ["wrap_help", "cargo"] }
+clap_complete = "4.5"
+regex = "1.11"
+lazy_static = "1.5"
+dirs = "5.0"
+
+[dependencies]
+scraper = "0.19"
+futures = "0.3"
+tokio = { version = "1.47", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+log = "0.4"
+env_logger = "0.11"
+reqwest = { version = "0.12", features = ["socks", "native-tls-alpn"] }
+# uses feature unification to add 'serde' to reqwest::Url
+url = { version = "2.5", features = ["serde"] }
+serde_regex = "1.1"
+clap = { version = "4.5", features = ["wrap_help", "cargo"] }
+lazy_static = "1.5"
+toml = "0.8"
+serde = { version = "1.0", features = ["derive", "rc"] }
+serde_json = "1.0"
+uuid = { version = "1.17", features = ["v4"] }
+indicatif = { version = "0.17.11" }
+console = "0.15"
+openssl = { version = "0.10", features = ["vendored"] }
+dirs = "5.0"
+regex = "1.11"
+crossterm = "0.27"
+rlimit = "0.10"
+ctrlc = "3.4"
+anyhow = "1.0"
+leaky-bucket = "1.1"
+gaoya = "0.2"
+# 1.0+ supports injecting a pre-built reqwest client (reqwest_client) and trusting extra
+# root certs (add_root_certificate), which --update needs to honor --insecure/--server-certs
+# archive-tar/compression-tar-gz are on by default as of 1.0, only zip support needs opting in
+self_update = { version = "1.3", features = ["archive-zip", "compression-zip-deflate"] }
+
+[dev-dependencies]
+tempfile = "3.20"
+httpmock = "0.7"
+assert_cmd = "2.1"
+predicates = "3.1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = 'abort'
+
+[package.metadata.deb]
+section = "utility"
+license-file = ["LICENSE", "4"]
+conf-files = ["/etc/feroxbuster/ferox-config.toml"]
+assets = [
+    [
+        "target/release/feroxbuster",
+        "/usr/bin/",
+        "755",
+    ],
+    [
+        "ferox-config.toml.example",
+        "/etc/feroxbuster/ferox-config.toml",
+        "644",
+    ],
+    [
+        "shell_completions/feroxbuster.bash",
+        "/usr/share/bash-completion/completions/feroxbuster.bash",
+        "644",
+    ],
+    [
+        "shell_completions/feroxbuster.fish",
+        "/usr/share/fish/completions/feroxbuster.fish",
+        "644",
+    ],
+    [
+        "shell_completions/_feroxbuster",
+        "/usr/share/zsh/vendor-completions/_feroxbuster",
+        "644",
+    ],
+]
