@@ -288,10 +288,17 @@ The ML path is measured, not asserted — all three are reproducible and documen
 - **Live lab fingerprinting** — [`docs/analysis/jsintel-lab-results.md`](docs/analysis/jsintel-lab-results.md).
   Probed against Juice Shop, DVWA, WebGoat, WordPress, Django: WordPress is
   identified correctly; catch-all servers are the documented limitation.
-- **Confusion matrix + enhancement** — [`docs/analysis/fingerprint-enhancements.md`](docs/analysis/fingerprint-enhancements.md).
+- **Confusion matrix + enhancements** — [`docs/analysis/fingerprint-enhancements.md`](docs/analysis/fingerprint-enhancements.md).
   Fingerprint accuracy is **100 % on clean signal**, **40 % on real catch-all
-  labs**; a prototyped **catch-all guard** cuts confident errors **3 → 1 with no
-  loss of correct answers**. Ranked next steps (E1 tested, E2–E8 proposed) included.
+  labs**; the catch-all guard cuts confident errors **3 → 1 with no loss of
+  correct answers**. All eight enhancements (E1–E8) shipped.
+- **Classifier benchmark** — [`docs/analysis/fingerprint-classifier-benchmark.md`](docs/analysis/fingerprint-classifier-benchmark.md)
+  + an HTML confusion-matrix heatmap [`fingerprint-classifier-heatmap.html`](docs/analysis/fingerprint-classifier-heatmap.html).
+  Eight classifiers (hand centroids, Naive Bayes, logistic regression, k-NN, SVM,
+  random forest, GBDT, trained nearest-centroid) compared under observation noise:
+  the algorithm is **not** the bottleneck — the zero-data hand centroids stay
+  competitive, so features + labelled data are the real levers. Reproduce with
+  [`scripts/classifier_benchmark.py`](scripts/classifier_benchmark.py).
 
 ## Repository layout
 

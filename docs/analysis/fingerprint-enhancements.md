@@ -210,3 +210,16 @@ genuine hit; E5 (calibrated confidence) exposes a `[0,1]` probability; E6 (onlin
 re-fingerprinting) lets a scan self-correct its profile from discovered paths; E7
 (real K-Means) enables data-driven centroid refresh across many hosts; and E8
 (Markov subword back-off) proposes related siblings when a context is novel.
+
+## See also — which classifier?
+
+[`fingerprint-classifier-benchmark.md`](fingerprint-classifier-benchmark.md) (with
+an HTML confusion-matrix heatmap,
+[`fingerprint-classifier-heatmap.html`](fingerprint-classifier-heatmap.html))
+compares eight classifiers — hand centroids, (trained) nearest-centroid, Bernoulli
+Naive Bayes, logistic regression, k-NN, linear SVM, random forest, and GBDT — on
+this feature space under observation noise. Takeaway: the **algorithm is not the
+bottleneck** (the zero-data hand centroids stay within ~0.02 accuracy of the best
+trained model); richer features and a labelled host corpus are the real levers,
+after which Naive Bayes / logistic regression are the natural trained upgrades
+behind the `Classifier` trait.
