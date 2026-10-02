@@ -208,6 +208,28 @@ DynSDT trie). Markov's discovery edge appears only with its **profile seed**
 (non-list mode, §B), which list mode disables. Choose between them on query
 cost/memory (DynSDT) vs cold-start priors (seeded Markov), not on list-mode reach.
 
+### E. Non-list mode on the real lab — seeded Markov vs empty DynSDT
+
+§B shows the seed winning on a target *built* to match the `REST_API` profile. The
+live lab shows the other half of the story: the seed only helps when the target's
+structure matches the profile's assumptions. Juice Shop fingerprints as `NODE_SPA`;
+run in non-list mode with **no wordlist** (pure prediction, `--ml-loop --ml-algo
+<a>`):
+
+| `--algo` (non-list) | profile | rounds | requests | resources found |
+|---------------------|---------|:---:|:---:|:---:|
+| `markov` (seeded)   | NODE_SPA | 3 | **51** | 3 |
+| `dynsdt` (empty)    | NODE_SPA | 3 | **32** | 3 |
+
+Both discover the **same** `/robots.txt`, `/assets`, `/media` — all from the probe
+phase, which both share. The `NODE_SPA` seed's deeper guesses (`assets → index.js`,
+`api → v1`) don't match Juice Shop's actual layout (`/assets/public/…`, `/rest/…`),
+so seeded Markov finds **nothing extra** and spends **~60% more requests** (51 vs 32)
+chasing seed tokens that `404`. The seed is a bet on the target matching the
+profile: it pays off handsomely when it does (§B, 100% vs 0% cold) and costs wasted
+requests when it doesn't. DynSDT, with no seed, simply learns from the probe and
+predicts only what it has seen.
+
 ### Takeaway
 
 On a deep target with a wordlist that covers the leaf names, **every algorithm now
@@ -217,9 +239,10 @@ The predictor changes **reach** only where the wordlist falls short — the
 **cold-start** case, where seeded Markov predicts canonical structure no tree model
 can. And it changes **cost at scale** — DynSDT's output-sensitive `O(|p| + k log k)`
 top-k matters once a directory accumulates many learned children. Rules of thumb:
-`markov` for cold structured targets; `dynsdt` (default) once observations
-accumulate; `--learn` to warm a model, then scan with the algorithm whose query
-profile fits.
+`markov` for cold targets **that match a shipped profile** (the seed is a bet — it
+pays off when the structure matches, §B, and wastes requests when it doesn't, §E);
+`dynsdt` (default) once observations accumulate or when the target is off-profile;
+`--learn` to warm a model, then scan with the algorithm whose query profile fits.
 
 ## Cross-run accumulation
 
