@@ -132,10 +132,26 @@ in 50k requests under the old order now finds real paths from the first rounds:
 | signal-ranked, `--ml-list-max 300` | by document freq | 1,513 (**clean exit**) | 12 → depth 2 | — |
 
 Signal ranking turns the 0-in-50k result into 16 hits in ~5k requests and full
-13-directory recursion with a 20k cap. (Loading + ranking the whole 4.4M tree is a
-~2-3 min one-time cost per run; cap with `--ml-list-max` to skip most of it.)
+13-directory recursion with a 20k cap.
 
-Still bound a large run in practice:
+### 3c. The ranked pool is cached
+
+Ranking 4.4M entries is a ~3-minute cost, so the result is **cached to disk** (in the
+OS temp dir) keyed by the directory and a signature of its files (count + size +
+mtime). The next run reads the ranked pool back directly and skips the walk/ranking;
+the cache is rebuilt automatically whenever the tree changes. Measured on the full
+`Discovery/Web-Content`:
+
+| load | what it does | time |
+|---|---|---|
+| cold (first run / tree changed) | walk + document-frequency rank + write cache | **172 s** |
+| warm (cache hit) | read the ranked pool back | **4.3 s** |
+
+A **40× speed-up** — the 3-minute ranking is paid once. The startup line reports which
+path was taken: `[ml-loop] list pool loaded: N entries (recursive, from cache)` vs
+`(recursive, ranked + cached)`.
+
+Still bound a large *scan* in practice:
 
 - `--depth N` — the single biggest lever on total cost once directories are found.
 - `--ml-list-max N` — cap to the top-N highest-signal entries.

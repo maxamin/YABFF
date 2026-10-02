@@ -1,6 +1,8 @@
 //! Per-round wordlist construction and cross-round de-duplication.
 
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
+use std::io::{BufRead, Write};
 
 use crate::tokenize::path_segments;
 
@@ -70,7 +72,11 @@ pub fn load_wordlist(path: &str, cap: usize) -> std::io::Result<Vec<String>> {
 /// `cap` by signal. Files that can't be read (e.g. binary) are skipped rather than
 /// aborting the whole load. The result is deterministic.
 pub fn load_list_dir(dir: &str, cap: usize) -> std::io::Result<Vec<String>> {
-    // recursively collect every file under `dir`
+    Ok(capped(rank_entries(&collect_files(dir)), cap))
+}
+
+/// Recursively collect every file under `dir`, in sorted full-path order.
+fn collect_files(dir: &str) -> Vec<std::path::PathBuf> {
     let mut files: Vec<std::path::PathBuf> = Vec::new();
     let mut stack = vec![std::path::PathBuf::from(dir)];
     while let Some(d) = stack.pop() {
@@ -85,10 +91,16 @@ pub fn load_list_dir(dir: &str, cap: usize) -> std::io::Result<Vec<String>> {
             }
         }
     }
-    // document frequency: count the number of files each distinct entry appears in
+    files.sort();
+    files
+}
+
+/// Rank every entry across `files` by document frequency (files containing it)
+/// descending, then shorter, then lexicographic. Returns the full ranked pool.
+fn rank_entries(files: &[std::path::PathBuf]) -> Vec<String> {
     let mut df: HashMap<String, u32> = HashMap::new();
     for f in files {
-        let Ok(text) = std::fs::read_to_string(&f) else {
+        let Ok(text) = std::fs::read_to_string(f) else {
             continue; // skip unreadable/binary files
         };
         let mut in_file: HashSet<String> = HashSet::new();
@@ -102,18 +114,95 @@ pub fn load_list_dir(dir: &str, cap: usize) -> std::io::Result<Vec<String>> {
             }
         }
     }
-    // rank by signal: higher document frequency first, then shorter, then lexical
     let mut scored: Vec<(u32, String)> = df.into_iter().map(|(w, n)| (n, w)).collect();
     scored.sort_by(|(na, a), (nb, b)| {
         nb.cmp(na)
             .then_with(|| a.len().cmp(&b.len()))
             .then_with(|| a.as_str().cmp(b.as_str()))
     });
-    let mut pool: Vec<String> = scored.into_iter().map(|(_, w)| w).collect();
+    scored.into_iter().map(|(_, w)| w).collect()
+}
+
+fn capped(mut pool: Vec<String>, cap: usize) -> Vec<String> {
     if cap != 0 && pool.len() > cap {
         pool.truncate(cap); // keep the top `cap` highest-signal entries
     }
-    Ok(pool)
+    pool
+}
+
+/// Signature of the directory tree: file count plus each file's path, length and
+/// modified-time. Changes whenever a file is added, removed, resized or rewritten,
+/// so a stale cache is never used.
+fn tree_signature(files: &[std::path::PathBuf]) -> u64 {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    files.len().hash(&mut h);
+    for f in files {
+        f.to_string_lossy().as_bytes().hash(&mut h);
+        if let Ok(m) = std::fs::metadata(f) {
+            m.len().hash(&mut h);
+            if let Some(d) = m
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            {
+                d.as_secs().hash(&mut h);
+                d.subsec_nanos().hash(&mut h);
+            }
+        }
+    }
+    h.finish()
+}
+
+/// Cache file path for `dir` inside `cache_dir` (keyed by the absolute dir path).
+fn cache_file(cache_dir: &str, dir: &str) -> std::path::PathBuf {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    let abs = std::fs::canonicalize(dir).unwrap_or_else(|_| std::path::PathBuf::from(dir));
+    abs.to_string_lossy().as_bytes().hash(&mut h);
+    std::path::Path::new(cache_dir).join(format!("feroxml-listpool-{:016x}.cache", h.finish()))
+}
+
+/// Load the ranked pool with an on-disk cache in `cache_dir`, keyed by `dir` and a
+/// [`tree_signature`] of its files. On a cache **hit** the ranked pool is read back
+/// directly — skipping the recursive walk and document-frequency ranking (the
+/// expensive part for a multi-million-entry tree like full SecLists). On a **miss**
+/// (no cache, or the tree changed) it ranks fresh and writes the cache (best-effort;
+/// a read-only `cache_dir` simply means no speed-up). The cache file's first line is
+/// the signature; the rest are the ranked entries. Returns `(pool, from_cache)`.
+pub fn load_list_dir_cached(
+    dir: &str,
+    cap: usize,
+    cache_dir: &str,
+) -> std::io::Result<(Vec<String>, bool)> {
+    let files = collect_files(dir);
+    let sig = tree_signature(&files);
+    let cache = cache_file(cache_dir, dir);
+
+    if let Ok(f) = std::fs::File::open(&cache) {
+        let mut rd = std::io::BufReader::new(f);
+        let mut first = String::new();
+        if rd.read_line(&mut first).is_ok() && first.trim_end() == sig.to_string() {
+            let pool: Vec<String> = rd.lines().map_while(Result::ok).collect();
+            return Ok((capped(pool, cap), true));
+        }
+    }
+
+    let full = rank_entries(&files);
+    // best-effort cache write (signature line, then one entry per line)
+    if let Some(parent) = cache.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(f) = std::fs::File::create(&cache) {
+        let mut w = std::io::BufWriter::new(f);
+        if writeln!(w, "{sig}").is_ok() {
+            for e in &full {
+                if writeln!(w, "{e}").is_err() {
+                    break;
+                }
+            }
+        }
+        let _ = w.flush();
+    }
+    Ok((capped(full, cap), false))
 }
 
 /// A merged list pool that is **re-applied to every directory**: each arm (a
@@ -254,6 +343,41 @@ mod tests {
         let all = load_list_dir(dir.to_str().unwrap(), 0).unwrap();
         assert_eq!(all, ["api", "admin", "login", "users"]);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_list_dir_cached_hits_and_invalidates() {
+        let base = std::env::temp_dir().join(format!("ferox-cache-{}", std::process::id()));
+        let dir = base.join("lists");
+        let cache = base.join("cache");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::write(dir.join("a.txt"), "admin\napi\n").unwrap();
+        let (d, c) = (dir.to_str().unwrap(), cache.to_str().unwrap());
+
+        // first load: cache MISS, ranks fresh and writes the cache
+        let (p1, hit1) = load_list_dir_cached(d, 0, c).unwrap();
+        assert!(!hit1, "first load must be a miss");
+        // second load (unchanged tree): cache HIT, identical result
+        let (p2, hit2) = load_list_dir_cached(d, 0, c).unwrap();
+        assert!(hit2, "second load must hit the cache");
+        assert_eq!(p1, p2);
+
+        // changing the tree invalidates the cache (new file -> new signature)
+        std::fs::write(dir.join("b.txt"), "newtoken\n").unwrap();
+        let (p3, hit3) = load_list_dir_cached(d, 0, c).unwrap();
+        assert!(!hit3, "a changed tree must miss");
+        assert!(p3.contains(&"newtoken".to_string()));
+        // and the refreshed cache hits again
+        let (_p4, hit4) = load_list_dir_cached(d, 0, c).unwrap();
+        assert!(hit4);
+
+        // cap is applied after the cache read
+        let (capped, hit5) = load_list_dir_cached(d, 1, c).unwrap();
+        assert!(hit5);
+        assert_eq!(capped.len(), 1);
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
