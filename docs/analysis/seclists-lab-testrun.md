@@ -88,3 +88,20 @@ Before vs after on DVWA with the default `--ml-list-chunk 200`:
 
 Verified by a new unit test (`list_driven_drains_whole_pool_across_rounds`): a flat
 target with no discovered directories now consumes the entire pool across rounds.
+
+## Re-run with the list-drain fix (default `--ml-list-chunk 200`)
+
+| lab | profile | rounds | requests | found | predicted | soft404 | oos | wall |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| juice-shop | LIST_DRIVEN | 25 | 5082 | 7 | 7 | 5030 | 0 | 193s |
+| dvwa | LIST_DRIVEN | 25 | 5110 | 9 | 9 | 4987 | 0 | 9s |
+| webgoat | LIST_DRIVEN | 25 | 5000 | 0 | 0 | 0 | 0 | 3s |
+| wordpress | LIST_DRIVEN | 25 | 5024 | 2 | 2 | 5024 | 0 | 327s |
+| django | LIST_DRIVEN | 25 | 5008 | 1 | 1 | 0 | 0 | 85s |
+
+**Before → after (default chunk 200), rounds / requests / found:**
+juice-shop 1/200/1 → 25/5082/7 · dvwa 1/200/5 → 25/5110/9 · webgoat 1/200/0 →
+25/5000/0 · wordpress 2/401/1 → 25/5024/2 · django 1/200/0 → 25/5008/1. Every lab
+now drains the list across the full round budget without tuning the knob; soft-404
+filtering scales with it (juice-shop 5030, wordpress 5024 filtered). WebGoat stays
+0 (its app is under `/WebGoat/`, which the generic lists don't hit).
