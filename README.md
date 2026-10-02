@@ -394,6 +394,12 @@ The ML path is measured, not asserted — all three are reproducible and documen
   query complexity, memory, and a live Juice Shop sweep. The tree models find the
   same paths; DynSDT keeps top-k **output-sensitive** (`O(|p| + k log k)`), which is
   why it is the list-mode default.
+- **Full recursive SecLists at unlimited depth** — [`docs/analysis/recursive-seclists-depth.md`](docs/analysis/recursive-seclists-depth.md).
+  The loader ingests the whole `Discovery/Web-Content` tree (**4,409,677 entries**,
+  386 files) and re-applies it to every directory; `--depth 0` recurses to the
+  bottom and terminates on finite sites (15 resources to depth 3, clean), while the
+  full tree × unlimited depth is a comprehensive background scan to bound with
+  `--depth` / `--scan-limit`.
 - **Classifier benchmark** — [`docs/analysis/fingerprint-classifier-benchmark.md`](docs/analysis/fingerprint-classifier-benchmark.md)
   + an HTML confusion-matrix heatmap [`fingerprint-classifier-heatmap.html`](docs/analysis/fingerprint-classifier-heatmap.html).
   Eight classifiers (hand centroids, Naive Bayes, logistic regression, k-NN, SVM,
