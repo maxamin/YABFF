@@ -22,7 +22,7 @@ comments/blank lines, and de-duplicates:
 | metric | value |
 |---|---|
 | files read (recursive) | 386 |
-| unique entries ingested (`--ml-list-max 0`) | **4,409,677** |
+| unique entries ingested (`--ml-list-max 0`) | **4,409,610** |
 
 Every entry in the directory tree is usable; `--ml-list-max N` caps it when memory
 or time is tight (the full load is ~4.4M strings in memory).
@@ -76,26 +76,46 @@ Juice Shop's full chain to depth 4 with no flags:
 /assets/public/images/products                        (depth 4)
 ```
 
-## 3. Scale reality — full SecLists × unlimited depth is effectively unbounded
+## 3. Full SecLists × unlimited default on Juice Shop — the scale benchmark
 
-Re-applying 4.4M entries to **every** discovered directory, at unlimited depth, is a
-very large scan by construction. Even a small slice shows it:
+Running the raw default — `--ml-list-dir /usr/share/seclists/Discovery/Web-Content`,
+no `--depth`, no `--ml-list-max` — against the live Juice Shop, time-boxed to 8 min:
 
-| run | list | depth | result |
-|---|---|---|---|
-| OWASP Juice Shop (real app) | 5,014 real SecLists entries (recursive) | `0` (unlimited) | **did not finish in 10 min** |
-| full `Discovery/Web-Content` | 4,409,677 entries | `0` | 4.4M × every directory — impractical to complete |
+| metric | value |
+|---|---|
+| entries loaded (recursive) | **4,409,610** |
+| wall-clock | 480 s (time-boxed) |
+| requests issued | 50,000 (250 rounds × 200) |
+| throughput | ~104 req/s (against Juice Shop) |
+| **resources found** | **0** |
+| directories expanded | 0 (still only the root arm) |
 
-The cost is `entries × directories-discovered × depth`, so the full tree at unlimited
-depth is a **comprehensive/background** scan, not a quick one. Bound it in practice:
+Zero finds after 50k requests — not a bug, a **load-order** effect. The pool is built
+in sorted full-path order, so the first files read are
+`ActiveDirectory-small.txt`, `AdobeXML.fuzz.txt`, `BurpSuite-ParamMiner/…` (HTTP
+*header* names, not paths), `CMS/Adobe-AEM…` — all low-signal for Juice Shop. The
+generic high-hit list (`common.txt`, with `/assets`, `/ftp`, `robots.txt`) sorts far
+later and the cursor never reached it in 50k entries. At ~100 req/s the full 4.4M is
+**~10+ hours for the root level alone**, before any recursion.
 
-- `--depth N` (e.g. `4`) — the single biggest lever; depth is what makes it finite.
+Contrast §2b: a 14-entry *curated* list found Juice Shop's full depth-4 chain in 11 s.
+The lesson is that **coverage is dominated by list content/order, not raw size** —
+blindly firing all of SecLists in path order spends the early budget on esoteric
+lists. In practice:
+
+- **Order/curate the lists** — put high-signal generic lists first (point
+  `--ml-list-dir` at a folder whose files sort useful-first, or just at `common.txt`'s
+  directory), rather than the whole tree in alphabetical order.
+- `--depth N` — the single biggest lever on total cost once directories are found.
 - `--ml-list-max N` — cap how much of the tree is loaded.
 - `--scan-limit`, a request/time budget, or Ctrl-C — stop a long run.
 
+Progress is now emitted to stderr (`[ml-loop] list pool loaded: N entries` and a
+`rounds=/requests=/found=/arms=` line every 25 rounds) so a long run is observable.
+
 Soft-404 filtering and per-path de-duplication guard against catch-all runaway, but
-**depth is the primary bound** — `--depth 0` against a catch-all/soft-404 server that
-answers every path will not self-terminate.
+**depth is the primary bound** — unlimited depth against a catch-all/soft-404 server
+that answers every path will not self-terminate.
 
 ## How prediction fits in
 

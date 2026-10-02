@@ -174,9 +174,14 @@ impl Campaign {
         // (each arm has its own cursor), and `arm_tried` records the words already
         // scheduled per arm so predictions aren't rescanned when an arm is re-served.
         let mut pool = if list_mode {
-            Some(ListPool::new(
-                load_list_dir(&self.cfg.list_dir, self.cfg.list_max_entries).unwrap_or_default(),
-            ))
+            let loaded = load_list_dir(&self.cfg.list_dir, self.cfg.list_max_entries)
+                .unwrap_or_default();
+            eprintln!(
+                "[ml-loop] list pool loaded: {} entries (recursive) from {}",
+                loaded.len(),
+                self.cfg.list_dir
+            );
+            Some(ListPool::new(loaded))
         } else {
             None
         };
@@ -343,6 +348,18 @@ impl Campaign {
             })?;
             summary.requests_used += words.len();
             summary.rounds += 1;
+
+            // periodic progress for long list-mode scans (full SecLists / unlimited
+            // depth), so a large run is observable without waiting for the summary.
+            if list_mode && summary.rounds % 25 == 0 {
+                eprintln!(
+                    "[ml-loop] rounds={} requests={} found={} arms={}",
+                    summary.rounds,
+                    summary.requests_used,
+                    summary.discovered.len(),
+                    known_arms.len()
+                );
+            }
 
             let mut hits = 0usize;
             for r in &resps {

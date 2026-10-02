@@ -397,7 +397,7 @@ The ML path is measured, not asserted — all three are reproducible and documen
   same paths; DynSDT keeps top-k **output-sensitive** (`O(|p| + k log k)`), which is
   why it is the list-mode default.
 - **Full recursive SecLists at unlimited depth** — [`docs/analysis/recursive-seclists-depth.md`](docs/analysis/recursive-seclists-depth.md).
-  The loader ingests the whole `Discovery/Web-Content` tree (**4,409,677 entries**,
+  The loader ingests the whole `Discovery/Web-Content` tree (**4,409,610 entries**,
   386 files) and re-applies it to every directory; list mode **defaults to unlimited
   depth**, which recurses to the bottom and terminates on finite sites (15 resources
   to depth 3, clean; `--depth 2` → depth 2, 9), while the full tree × unlimited depth
