@@ -41,6 +41,10 @@ pub fn feature_vector(responses: &[ProbeResp]) -> [f64; N_FEATURES] {
     let mut php_sig = false;
     let mut root_json = false;
     let mut cookie_django = false;
+    // richer technology signals (E-features from headers/cookies/body shape)
+    let mut cookie_node = false; // connect.sid / next-auth / express session
+    let mut cookie_php_fw = false; // laravel / codeigniter / symfony session
+    let mut sec_headers = false; // CSP / HSTS / X-Frame-Options / X-Content-Type-Options
     for r in responses {
         if let Some(v) = r.header("x-powered-by") {
             x_powered_by = true;
@@ -75,6 +79,25 @@ pub fn feature_vector(responses: &[ProbeResp]) -> [f64; N_FEATURES] {
             if lv.contains("csrftoken") {
                 cookie_django = true;
             }
+            if lv.contains("connect.sid") || lv.contains("next-auth") || lv.contains("express:sess") {
+                cookie_node = true;
+            }
+            if lv.contains("laravel_session") || lv.contains("ci_session") || lv.contains("symfony") {
+                cookie_php_fw = true;
+                php_sig = true;
+            }
+        }
+        // security headers → a "modern app" signal (SPA/REST/Spring/Django lean on
+        // them; classic static/PHP sites less so)
+        for h in [
+            "content-security-policy",
+            "strict-transport-security",
+            "x-frame-options",
+            "x-content-type-options",
+        ] {
+            if r.header(h).is_some() {
+                sec_headers = true;
+            }
         }
         // root response content-type
         if norm_path(&r.url).is_empty() {
@@ -97,6 +120,11 @@ pub fn feature_vector(responses: &[ProbeResp]) -> [f64; N_FEATURES] {
     }
     let sig_spa = has("manifest.webmanifest") || has("_next") || has("assets");
     let sig_django = cookie_django || has("static/admin");
+    // a real rendered HTML page was served (vs small JSON/404 bodies) — separates
+    // CMS/SPA/static from JSON APIs. Uses body sizes captured on the probe.
+    let heavy_html = responses
+        .iter()
+        .any(|r| r.status != 0 && r.status != 404 && r.word_count > 200);
     let strong_dynamic = rest_like
         || has("actuator")
         || has("wp-json")
@@ -128,6 +156,10 @@ pub fn feature_vector(responses: &[ProbeResp]) -> [f64; N_FEATURES] {
         static_sig,               // 17
         b(sig_spa),               // 18
         b(sig_django),            // 19
+        b(cookie_node),           // 20
+        b(cookie_php_fw),         // 21
+        b(sec_headers),           // 22
+        b(heavy_html),            // 23
     ]
 }
 

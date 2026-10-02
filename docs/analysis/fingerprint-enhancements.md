@@ -223,3 +223,24 @@ bottleneck** (the zero-data hand centroids stay within ~0.02 accuracy of the bes
 trained model); richer features and a labelled host corpus are the real levers,
 after which Naive Bayes / logistic regression are the natural trained upgrades
 behind the `Classifier` trait.
+
+## Richer feature extraction (shipped)
+
+Following the benchmark's conclusion that *features, not the algorithm*, are the
+lever, the feature vector grew from 20 → **24 dims** with technology signals that
+path-presence alone misses (in [`fingerprint.rs`](../../ferox-ml-core/src/fingerprint.rs)):
+
+- **`cookie_node`** — Node session cookies (`connect.sid` / `next-auth`) → NODE_SPA.
+- **`cookie_php_fw`** — PHP-framework sessions (`laravel_session` / `ci_session` /
+  `symfony`) → PHP_GENERIC.
+- **`sec_headers`** — modern security headers (CSP / HSTS / X-Frame-Options /
+  X-Content-Type-Options): a modern-app vs classic-static cue.
+- **`heavy_html`** — a real rendered HTML page was served (word-count cue) vs a
+  small JSON/404 body: separates CMS/SPA/static from JSON APIs.
+
+Effect: on the (synthetic) benchmark, every classifier improved — e.g. Bernoulli
+Naive Bayes 0.792 → 0.808, the zero-data hand centroids 0.775 → 0.783 — confirming
+richer features lift the whole field. Gated lab verdicts are unchanged (WordPress →
+WP, Django → DJANGO, WebGoat → static, Juice Shop / DVWA catch-alls abstained). The
+natural next features (needing a probe-transport change) are favicon hashes and
+JS-framework detection from SPA bundles.

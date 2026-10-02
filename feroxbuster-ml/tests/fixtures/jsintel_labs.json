@@ -4,6 +4,8 @@
    "url": "http://127.0.0.1:3000/",
    "status": 200,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -11,6 +13,8 @@
    "url": "http://127.0.0.1:3000/wp-json",
    "status": 200,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -18,6 +22,8 @@
    "url": "http://127.0.0.1:3000/wp-login.php",
    "status": 200,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -25,6 +31,8 @@
    "url": "http://127.0.0.1:3000/actuator",
    "status": 200,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -32,6 +40,8 @@
    "url": "http://127.0.0.1:3000/actuator/health",
    "status": 200,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -39,6 +49,8 @@
    "url": "http://127.0.0.1:3000/api",
    "status": 500,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=utf-8"
    }
   },
@@ -46,6 +58,8 @@
    "url": "http://127.0.0.1:3000/api/v1",
    "status": 500,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=utf-8"
    }
   },
@@ -53,6 +67,8 @@
    "url": "http://127.0.0.1:3000/api/v2",
    "status": 500,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=utf-8"
    }
   },
@@ -60,6 +76,8 @@
    "url": "http://127.0.0.1:3000/rest",
    "status": 500,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=utf-8"
    }
   },
@@ -67,6 +85,8 @@
    "url": "http://127.0.0.1:3000/graphql",
    "status": 200,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -74,6 +94,8 @@
    "url": "http://127.0.0.1:3000/swagger-ui.html",
    "status": 200,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -81,6 +103,8 @@
    "url": "http://127.0.0.1:3000/openapi.json",
    "status": 200,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -88,6 +112,8 @@
    "url": "http://127.0.0.1:3000/v2/api-docs",
    "status": 200,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -95,6 +121,8 @@
    "url": "http://127.0.0.1:3000/.git/HEAD",
    "status": 200,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -102,6 +130,8 @@
    "url": "http://127.0.0.1:3000/robots.txt",
    "status": 200,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/plain; charset=utf-8"
    }
   },
@@ -109,6 +139,8 @@
    "url": "http://127.0.0.1:3000/xmlrpc.php",
    "status": 200,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -116,6 +148,8 @@
    "url": "http://127.0.0.1:3000/index.php",
    "status": 200,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -123,6 +157,8 @@
    "url": "http://127.0.0.1:3000/index.jsp",
    "status": 200,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -130,6 +166,8 @@
    "url": "http://127.0.0.1:3000/server-status",
    "status": 200,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -137,6 +175,8 @@
    "url": "http://127.0.0.1:3000/manifest.webmanifest",
    "status": 200,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -144,6 +184,8 @@
    "url": "http://127.0.0.1:3000/_next",
    "status": 200,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -151,6 +193,8 @@
    "url": "http://127.0.0.1:3000/assets",
    "status": 200,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -158,6 +202,8 @@
    "url": "http://127.0.0.1:3000/static/admin",
    "status": 200,
    "headers": {
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
     "content-type": "text/html; charset=UTF-8"
    }
   }
@@ -168,7 +214,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=f99b07786e6ed4f047bc002a5a5abe54; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=bc583f04c2215a35e4b5007c5ab4256f; expires=Fri, 02 Oct 2026 23:47:35 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -177,7 +223,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=bf873daac0ad04fab265e6ae82266684; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=4421681ca5b4469918be90f77e4c07cf; expires=Fri, 02 Oct 2026 23:47:35 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -186,7 +232,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=aa78e3fdf33d53b2d16b527e149b455c; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=f54222e2837903d8c6b663d6e4d740eb; expires=Fri, 02 Oct 2026 23:47:35 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -195,7 +241,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=7b2b21d9cdaf3ca2785f693e0abf8b7e; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=f503265ee5517291a032ec1080084652; expires=Fri, 02 Oct 2026 23:47:35 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -204,7 +250,7 @@
    "status": 302,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=bd2f25c3957bab109d39413c38c6e0f0; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=4d20f30321d681bc9f9055585df9f71e; expires=Fri, 02 Oct 2026 23:47:35 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -213,7 +259,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=1f60c98776a463828b808e520ba8d7fc; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=661ae75712932848ea623f6d9e75de1f; expires=Fri, 02 Oct 2026 23:47:35 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -222,7 +268,7 @@
    "status": 302,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=4aedb67706958226e17e8a41a1bd5bb2; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=04ae94699c3924a86dcff4cb76548621; expires=Fri, 02 Oct 2026 23:47:35 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -231,7 +277,7 @@
    "status": 302,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=2bb8eae4a1aaa0a97b5761e4f636314f; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=442e01dbbab0917165580b7d3e97c71c; expires=Fri, 02 Oct 2026 23:47:35 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -240,7 +286,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=3681e00257e6f14ed7c3b9ca63f07f3b; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=09ea022c706f3ac2b4c329c990603a41; expires=Fri, 02 Oct 2026 23:47:35 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -249,7 +295,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=2ab5dd53bbc4379cc3f54edd1de41791; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=1dd67af9da48aa2b87ecbe888d423ebf; expires=Fri, 02 Oct 2026 23:47:35 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -258,7 +304,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=c8709a6085002c47b5309ba405979e38; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=2649b9623266a9c59ea9007006aba0c3; expires=Fri, 02 Oct 2026 23:47:35 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -267,7 +313,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=2804d7709040acf1e73bc47f725cb20a; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=d732bea96954b0eb237b6a14619e20a1; expires=Fri, 02 Oct 2026 23:47:35 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -276,7 +322,7 @@
    "status": 302,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=9c7dcf0733980366600d8a2501a7fb16; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=c1792bc2423d8487cedc2c044a29b309; expires=Fri, 02 Oct 2026 23:47:35 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html; charset=UTF-8"
    }
   },
@@ -297,7 +343,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=17dcc236b22bde69aeac639774e132df; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=e8a84fc958de6256bd29789f7890bc81; expires=Fri, 02 Oct 2026 23:47:36 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -306,7 +352,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=cd5a6f242523fc4e0f17efe0aed6c49c; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=025f9904568a79ab1a0b46ef8838571f; expires=Fri, 02 Oct 2026 23:47:36 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -315,7 +361,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=7e4815e10a5604216db9855cd5b2556a; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=7c605c84873de9249f874a2240a8bf9d; expires=Fri, 02 Oct 2026 23:47:36 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -324,7 +370,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=40d69c123a158641d342544818a20ff7; expires=Fri, 02 Oct 2026 18:33:08 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=20617ebb789799230f62a914fbeaab39; expires=Fri, 02 Oct 2026 23:47:36 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -333,7 +379,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=640fdcc558920f68097c7cd2ae215b2b; expires=Fri, 02 Oct 2026 18:33:09 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=273beea23cf8f92a24dafe182cf0f239; expires=Fri, 02 Oct 2026 23:47:36 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -342,7 +388,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=b00c1cf94d09e9be32fa1d62c2a4f7a7; expires=Fri, 02 Oct 2026 18:33:09 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=e287a42265499a7676739316e036ebb0; expires=Fri, 02 Oct 2026 23:47:36 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -351,7 +397,7 @@
    "status": 200,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=9ce1a96a72c5edfdc1583699bce2bbd8; expires=Fri, 02 Oct 2026 18:33:09 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=66674617231296bae68021cd1dabcc24; expires=Fri, 02 Oct 2026 23:47:36 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html;charset=utf-8"
    }
   },
@@ -360,7 +406,7 @@
    "status": 302,
    "headers": {
     "x-powered-by": "PHP/8.4.26",
-    "set-cookie": "PHPSESSID=3066bbec5966f813acfcdfc28af1ee0e; expires=Fri, 02 Oct 2026 18:33:09 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
+    "set-cookie": "PHPSESSID=f6bea9030188ffb2356953bab9634243; expires=Fri, 02 Oct 2026 23:47:36 GMT; Max-Age=86400; path=/; domain=127.0.0.3; HttpOnly; SameSite=Strict",
     "content-type": "text/html; charset=UTF-8"
    }
   }
@@ -505,7 +551,9 @@
    "headers": {
     "x-powered-by": "PHP/8.4.26",
     "content-type": "text/html; charset=UTF-8",
-    "set-cookie": "wordpress_test_cookie=WP%20Cookie%20check; path=/; HttpOnly"
+    "set-cookie": "wordpress_test_cookie=WP%20Cookie%20check; path=/; HttpOnly",
+    "x-frame-options": "SAMEORIGIN",
+    "content-security-policy": "frame-ancestors 'self';"
    }
   },
   {
@@ -676,7 +724,7 @@
    "headers": {
     "server": "WSGIServer/0.2 CPython/3.14.7",
     "content-type": "text/html; charset=utf-8",
-    "set-cookie": "csrftoken=lNKGsNNL1SsToglhe91pJAv0WzxfvRsy; expires=Thu, 30 Sep 2027 18:33:18 GMT; Max-Age=31449600; Path=/; SameSite=Lax"
+    "set-cookie": "csrftoken=0u8sI5Me1Wm9hoeWH9VBbtZ6H1xpF1Ty; expires=Thu, 30 Sep 2027 23:47:45 GMT; Max-Age=31449600; Path=/; SameSite=Lax"
    }
   },
   {

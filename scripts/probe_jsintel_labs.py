@@ -39,7 +39,12 @@ PROBE = ["", "wp-json", "wp-login.php", "actuator", "actuator/health", "api",
 # random, almost-certainly-absent paths -> the server's soft-404 baseline (E2)
 RANDOM = ["zz-absent-a1b2c3d4", "zz-absent-e5f6a7b8", "zz-absent-99x0y1z2"]
 
-KEEP = {"content-type", "server", "x-powered-by", "set-cookie"}
+KEEP = {
+    "content-type", "server", "x-powered-by", "set-cookie",
+    # security headers → the sec_headers richer feature
+    "content-security-policy", "strict-transport-security",
+    "x-frame-options", "x-content-type-options",
+}
 FIXDIR = os.path.join(os.path.dirname(__file__), "..", "feroxbuster-ml", "tests", "fixtures")
 
 

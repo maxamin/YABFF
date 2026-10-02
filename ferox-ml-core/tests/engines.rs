@@ -234,7 +234,7 @@ fn e5_calibrated_confidence_is_a_distribution_peaked_on_the_match() {
         ProbeResp::new("https://x/wp-login.php", 200),
         ProbeResp::new("https://x/xmlrpc.php", 405),
     ];
-    let (_, dists) = classify_with_weights(&feature_vector(&probes), &[1.0; 20]);
+    let (_, dists) = classify_with_weights(&feature_vector(&probes), &[1.0; N_FEATURES]);
     let probs = softmax_confidence(&dists, 2.0);
     // a probability distribution: sums to 1, each in [0,1]
     let sum: f64 = probs.iter().map(|(_, p)| *p).sum();
@@ -267,8 +267,8 @@ fn e6_profile_tracker_self_corrects_from_discovered_paths() {
 #[test]
 fn e7_kmeans_recovers_seed_centroids() {
     // feeding each profile's own centroid as a point: every cluster keeps its seed
-    let seeds: Vec<[f64; 20]> = centroids().into_iter().map(|(_, c)| c).collect();
-    let fitted = kmeans_fit(&seeds, 10, &[1.0; 20]);
+    let seeds: Vec<[f64; N_FEATURES]> = centroids().into_iter().map(|(_, c)| c).collect();
+    let fitted = kmeans_fit(&seeds, 10, &[1.0; N_FEATURES]);
     assert_eq!(fitted.len(), centroids().len());
     for ((name, got), (sname, seed)) in fitted.iter().zip(centroids()) {
         assert_eq!(*name, sname);

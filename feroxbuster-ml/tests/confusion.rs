@@ -17,15 +17,27 @@ struct RawResp {
     status: u16,
     #[serde(default)]
     headers: HashMap<String, String>,
+    #[serde(default)]
+    content_length: u64,
+    #[serde(default)]
+    word_count: u64,
+    #[serde(default)]
+    line_count: u64,
+}
+
+#[derive(serde::Deserialize)]
+struct LabFull {
+    probes: Vec<RawResp>,
 }
 
 /// Real probe captures from the live jsintel labs, with best-judgment true labels
-/// for the actual stack. `(lab, true_label)`. Juice Shop / WebGoat / Django are
-/// honest hard cases: their probes expose little same-origin signal (catch-all,
-/// 404s, or root-only), so the fingerprint can miss even with the right label.
+/// for the actual stack. `(lab, true_label)`. Uses the *full* fixture (response
+/// sizes + security headers) so the richer features (heavy_html, sec_headers) have
+/// real values. Juice Shop / WebGoat / Django remain honest hard cases (catch-all,
+/// 404s, or root-only).
 fn lab_dataset() -> Vec<(&'static str, &'static str, Vec<ProbeResp>)> {
-    let raw: HashMap<String, Vec<RawResp>> =
-        serde_json::from_str(include_str!("fixtures/jsintel_labs.json")).unwrap();
+    let raw: HashMap<String, LabFull> =
+        serde_json::from_str(include_str!("fixtures/jsintel_labs_full.json")).unwrap();
     let truth = [
         ("juice-shop", "REST_API"),
         ("dvwa", "PHP_GENERIC"),
@@ -37,12 +49,15 @@ fn lab_dataset() -> Vec<(&'static str, &'static str, Vec<ProbeResp>)> {
         .iter()
         .map(|(lab, label)| {
             let probes = raw[*lab]
+                .probes
                 .iter()
                 .map(|r| ProbeResp {
                     url: r.url.clone(),
                     status: r.status,
                     headers: r.headers.clone(),
-                    ..Default::default()
+                    content_length: r.content_length,
+                    word_count: r.word_count,
+                    line_count: r.line_count,
                 })
                 .collect();
             (*lab, *label, probes)

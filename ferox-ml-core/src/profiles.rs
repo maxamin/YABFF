@@ -4,7 +4,7 @@
 
 /// Ordered names of the features in every target feature vector. The centroids
 /// below and the fingerprint module's vectorizer use this exact order.
-pub const FEATURE_NAMES: [&str; 20] = [
+pub const FEATURE_NAMES: [&str; 24] = [
     "wp_json",           // 0  /wp-json present
     "wp_login",          // 1  /wp-login.php present
     "actuator",          // 2  /actuator present
@@ -25,6 +25,10 @@ pub const FEATURE_NAMES: [&str; 20] = [
     "sig_static",        // 17 looks like a static/legacy site
     "sig_spa",           // 18 SPA build output (manifest.webmanifest, /_next, /assets)
     "sig_django",        // 19 Django signal (csrftoken cookie, /static/admin)
+    "cookie_node",       // 20 Node session cookie (connect.sid / next-auth)
+    "cookie_php_fw",     // 21 PHP-framework session (laravel / codeigniter / symfony)
+    "sec_headers",       // 22 modern security headers (CSP / HSTS / X-Frame-Options)
+    "heavy_html",        // 23 a real rendered HTML page was served (vs JSON/404)
 ];
 
 pub const N_FEATURES: usize = FEATURE_NAMES.len();
@@ -57,6 +61,10 @@ pub const FEATURE_WEIGHTS: [f64; N_FEATURES] = [
     1.0, // 17 sig_static
     1.5, // 18 sig_spa
     2.0, // 19 sig_django
+    2.5, // 20 cookie_node (strong, Node-specific)
+    2.5, // 21 cookie_php_fw (strong, PHP-framework-specific)
+    1.0, // 22 sec_headers (common; modern-vs-legacy hint)
+    1.0, // 23 heavy_html (page-shape hint)
 ];
 
 /// `(profile_name, centroid)` for each of the four profiles. Each centroid is
@@ -68,37 +76,37 @@ pub fn centroids() -> Vec<(&'static str, [f64; N_FEATURES])> {
         (
             "REST_API",
             // api/apiv1/swagger/json-heavy, no wp, no servlet
-            [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.9, 0.1, 0.5, 1.0, 0.4, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.9, 0.1, 0.5, 1.0, 0.4, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.6, 0.1],
         ),
         (
             "ENTERPRISE_JAVA_SPRING",
             // actuator + servlet cookies + jsp signal
-            [0.0, 0.0, 1.0, 1.0, 0.6, 0.5, 0.6, 0.1, 0.4, 0.4, 0.3, 1.0, 1.0, 0.0, 0.0, 0.0, 0.9, 0.1, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 1.0, 0.6, 0.5, 0.6, 0.1, 0.4, 0.4, 0.3, 1.0, 1.0, 0.0, 0.0, 0.0, 0.9, 0.1, 0.0, 0.0, 0.0, 0.0, 0.6, 0.3],
         ),
         (
             "WORDPRESS_CMS",
             // wp-json/wp-login + wp cookie + php signal
-            [1.0, 1.0, 0.0, 0.0, 0.2, 0.1, 0.1, 0.1, 0.7, 0.0, 0.7, 0.0, 0.0, 1.0, 0.5, 0.9, 0.0, 0.1, 0.0, 0.0],
+            [1.0, 1.0, 0.0, 0.0, 0.2, 0.1, 0.1, 0.1, 0.7, 0.0, 0.7, 0.0, 0.0, 1.0, 0.5, 0.9, 0.0, 0.1, 0.0, 0.0, 0.0, 0.1, 0.3, 0.8],
         ),
         (
             "LEGACY_STATIC",
             // almost nothing dynamic; static signal high
-            [0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.1, 0.6, 0.0, 0.1, 0.0, 0.0, 0.0, 0.2, 0.2, 0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.1, 0.6, 0.0, 0.1, 0.0, 0.0, 0.0, 0.2, 0.2, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.5],
         ),
         (
             "PHP_GENERIC",
             // PHP app that is NOT WordPress: PHP signals + PHPSESSID, no wp markers
-            [0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.1, 0.5, 0.0, 0.8, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.3, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.1, 0.5, 0.0, 0.8, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.3, 0.0, 0.0, 0.0, 0.6, 0.2, 0.6],
         ),
         (
             "NODE_SPA",
             // single-page app: SPA build output, maybe a REST backend, HTML root
-            [0.0, 0.0, 0.0, 0.0, 0.4, 0.2, 0.1, 0.1, 0.3, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0, 0.4, 0.2, 0.1, 0.1, 0.3, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 1.0, 0.0, 0.7, 0.0, 0.6, 0.9],
         ),
         (
             "DJANGO",
             // Django: csrftoken/static-admin signal, often a DRF api, no x-powered-by
-            [0.0, 0.0, 0.0, 0.0, 0.3, 0.1, 0.1, 0.1, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 0.0, 1.0],
+            [0.0, 0.0, 0.0, 0.0, 0.3, 0.1, 0.1, 0.1, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 0.0, 1.0, 0.0, 0.0, 0.6, 0.4],
         ),
     ]
 }

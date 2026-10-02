@@ -97,8 +97,10 @@ response types. The swap-in traits in
 
 A bounded probe requests ~22 discriminating paths (`/wp-json`, `/actuator`,
 `/api/v1`, `/swagger-ui.html`, `/xmlrpc.php`, `manifest.webmanifest`, …). Their
-statuses and a few headers (`x-powered-by`, `server`, `set-cookie`, root
-`content-type`) become a **20-dim feature vector**, which is classified to the
+statuses plus technology signals from headers, cookies and body shape
+(`x-powered-by`, `server`, framework session cookies — `connect.sid`,
+`laravel_session`, `csrftoken`, `JSESSIONID` — security headers, and a
+rendered-HTML-vs-JSON cue) become a **24-dim feature vector**, classified to the
 nearest of seven profile **centroids** by a weighted Euclidean distance (strong
 discriminators — session cookies, framework signals — outweigh noisy path bits):
 
