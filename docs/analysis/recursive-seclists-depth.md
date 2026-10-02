@@ -112,14 +112,28 @@ direct  test  account  status  video  google  links  package.json  .htaccess
 browser  lang  link  service  details  help  home  …
 ```
 
-These are real generic paths that hit live apps immediately (Juice Shop itself serves
-`/video`, `index.php`, …) — versus the old first entries (`ActiveDirectory`,
-`BurpSuite` header names). Two consequences:
+These are real generic paths that hit live apps immediately — versus the old first
+entries (`ActiveDirectory`, `BurpSuite` header names). Two consequences:
 
 - The full-tree default now front-loads high-hit tokens, so it finds real paths in the
   first handful of requests instead of grinding through header-name lists.
 - `--ml-list-max N` now keeps the **top-N by signal**, so a cap is a high-signal
   subset rather than an alphabetical accident.
+
+**Live re-run (fresh loopback lab, same full 4.4M tree).** The same scan that found 0
+in 50k requests under the old order now finds real paths from the first rounds:
+
+| run | list order | requests | resources found | dirs found |
+|---|---|---|---|---|
+| old order (§3, Juice Shop) | path-sorted | 50,000 | **0** | 1 (root only) |
+| signal-ranked (full tree) | by document freq | 5,018 | **16** | 7 |
+| signal-ranked (full tree) | by document freq | 15,030 | **22** | 9 |
+| signal-ranked, `--ml-list-max 20000` | by document freq | (plateau) | **30 / 38** | **all 13** |
+| signal-ranked, `--ml-list-max 300` | by document freq | 1,513 (**clean exit**) | 12 → depth 2 | — |
+
+Signal ranking turns the 0-in-50k result into 16 hits in ~5k requests and full
+13-directory recursion with a 20k cap. (Loading + ranking the whole 4.4M tree is a
+~2-3 min one-time cost per run; cap with `--ml-list-max` to skip most of it.)
 
 Still bound a large run in practice:
 
