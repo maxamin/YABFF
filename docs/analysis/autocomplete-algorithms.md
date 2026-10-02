@@ -167,6 +167,28 @@ wordlist does **not** contain — the cold-start case in B.)
 > global cursor that consumed each word once across all directories, so depth was
 > bounded by the mode. That was fixed — the pool is now per-directory.
 
+### D. Real deep lab — OWASP Juice Shop (before/after the per-directory fix)
+
+The synthetic result above reproduces on a live lab. Juice Shop (`127.0.0.1:3000`)
+has a genuine depth-4 chain of directories, `/assets → /assets/public →
+/assets/public/images → /assets/public/images/products` (all `301`), plus `/ftp`.
+Same binary, same 48-entry wordlist (8 real path tokens + 40 noise),
+`--ml-algo dynsdt --ml-list-chunk 100`, run on the commit **before** and **after**
+the fix:
+
+| list mode | rounds | requests | resources | deepest found |
+|-----------|:---:|:---:|:---:|---|
+| **global cursor (pre-fix)** | 1 | 48 | **2** | `/assets`, `/ftp` (depth 1) |
+| **per-directory (post-fix)** | 6 | 288 | **7** | `/assets/public/images/products` (depth 4) |
+
+Pre-fix drained the entire wordlist at the root in a single round, so `/assets` and
+`/ftp` were discovered but never expanded — the cursor was exhausted and the scan
+stopped at depth 1. Post-fix re-applies the wordlist under each discovered
+directory, recursing to the full depth-4 chain. (`/rest` and `/api` return `500`,
+which isn't a success code, so they aren't expanded — a scope property of the target,
+not the fix.) Reproduce against any authorized deep target with a directory of
+wordlists and `--ml-loop --ml-list-dir`.
+
 ### Takeaway
 
 On a deep target with a wordlist that covers the leaf names, **every algorithm now
