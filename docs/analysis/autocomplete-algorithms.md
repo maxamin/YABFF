@@ -224,11 +224,27 @@ run in non-list mode with **no wordlist** (pure prediction, `--ml-loop --ml-algo
 Both discover the **same** `/robots.txt`, `/assets`, `/media` — all from the probe
 phase, which both share. The `NODE_SPA` seed's deeper guesses (`assets → index.js`,
 `api → v1`) don't match Juice Shop's actual layout (`/assets/public/…`, `/rest/…`),
-so seeded Markov finds **nothing extra** and spends **~60% more requests** (51 vs 32)
-chasing seed tokens that `404`. The seed is a bet on the target matching the
-profile: it pays off handsomely when it does (§B, 100% vs 0% cold) and costs wasted
-requests when it doesn't. DynSDT, with no seed, simply learns from the probe and
+so seeded Markov finds **nothing extra** and spends **19 more requests (+59%, 51 vs
+32)** chasing seed tokens that `404` — pure waste, 0 resources gained, and the result
+is deterministic across runs. DynSDT, with no seed, simply learns from the probe and
 predicts only what it has seen.
+
+**Controlled confirmation (same seed as §F).** To isolate the waste from any target
+quirk, a WordPress **decoy** — identical fingerprint signals to §F (so the same
+`WORDPRESS_CMS` seed loads) but with the `wp-*` directory tree **removed**:
+
+| target | `--algo` | requests | resources | deepest |
+|--------|----------|:---:|:---:|:---:|
+| §F real WP (tree present) | `markov` seeded | 233 | **21** | depth 3 |
+| decoy (tree absent)       | `markov` seeded | 18 | 5 | depth 1 |
+| decoy (tree absent)       | `dynsdt` empty  | 14 | 4 | depth 1 |
+
+Same seed, same fingerprint — only the structure differs. With the tree present the
+seed is worth 21 resources to depth 3 (§F); with it absent the seed predicts
+`wp-admin`/`wp-content`/`wp-includes` that all `404`, recovering just one real path
+(`/wp-login.php`) the probe missed and wasting the rest, with **no depth at all**.
+The seed is a bet on the target matching the profile: it pays off handsomely when it
+does (§B, §F) and costs wasted requests when it doesn't (§E Juice Shop, this decoy).
 
 ### F. WordPress target — the seed pays off
 
