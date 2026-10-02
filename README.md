@@ -179,6 +179,24 @@ tree with zero observations (100%) vs 0% for the tree models. DynSDT remains the
 list-mode default for its output-sensitive top-k as a directory's learned children
 grow. Full methodology and tables: [`docs/analysis/autocomplete-algorithms.md`](docs/analysis/autocomplete-algorithms.md).
 
+**Choosing an algorithm — the profile-match rule.** Markov is the only model with
+**cold-start seeds**, and that seed is a *bet that the target matches a shipped
+profile* (`REST_API`, `WORDPRESS_CMS`, `ENTERPRISE_JAVA_SPRING`, …). The bet is
+measured both ways:
+
+| target vs. profile | algorithm | outcome (benchmarked) |
+|---|---|---|
+| **matches** a profile | `markov` (seeded) | seed predicts the canonical tree cold — **WordPress: 21 resources to depth 3 vs 4 for an unseeded model** |
+| **off-profile** | `dynsdt` / `trie` (or `--learn`-warmed) | avoids the seed's misses — **Juice Shop: seeded Markov spent +59% requests for 0 extra resources** |
+| **list-driven** (`--ml-list-dir`) | `dynsdt` (default) | all models reach the same coverage; DynSDT's `O(\|p\|+k log k)` top-k and smaller model win as learned children grow |
+
+So: reach for `markov` when you recognize the stack and it matches a profile; prefer
+`dynsdt` (the default) when the target is off-profile, when you're driving a wordlist,
+or once a model has accumulated real observations; and use `--learn` /`--ml-model` to
+carry learning across runs so either model starts smarter next time. Evidence:
+[`docs/analysis/autocomplete-algorithms.md`](docs/analysis/autocomplete-algorithms.md)
+§B/§E/§F.
+
 ### 3. Budget scheduling — Thompson / UCB1 bandit
 [`scheduler.rs`](ferox-ml-core/src/scheduler.rs)
 
