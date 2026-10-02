@@ -189,6 +189,25 @@ which isn't a success code, so they aren't expanded — a scope property of the 
 not the fix.) Reproduce against any authorized deep target with a directory of
 wordlists and `--ml-loop --ml-list-dir`.
 
+**`markov` vs `dynsdt` on the same lab.** With the fix in place, the two algorithms
+are **indistinguishable for discovery** here — same wordlist, same budget:
+
+| `--algo` | `--ml-list-chunk` | rounds | requests | resources | model |
+|----------|:---:|:---:|:---:|:---:|:---:|
+| `markov` | 100 | 6 | 288 | 7 | — |
+| `dynsdt` | 100 | 6 | 288 | 7 | — |
+| `markov` | 3 | 25 | 85 | 7 | 1155 B / 7 ctx rows |
+| `dynsdt` | 3 | 25 | 84 | 7 | **660 B / 8 nodes** |
+
+Identical reach (the full depth-4 set) and all but one request, at both a coarse and
+a tight chunk. This is the expected result: list mode runs both **unseeded**, online
+learning is exact (neither generalizes across siblings, §A), and the per-directory
+walk finds every token regardless of predictor. The only measurable difference is
+**representation** — Markov stores multi-order context rows (~1.75× the bytes of the
+DynSDT trie). Markov's discovery edge appears only with its **profile seed**
+(non-list mode, §B), which list mode disables. Choose between them on query
+cost/memory (DynSDT) vs cold-start priors (seeded Markov), not on list-mode reach.
+
 ### Takeaway
 
 On a deep target with a wordlist that covers the leaf names, **every algorithm now
