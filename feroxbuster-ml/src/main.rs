@@ -885,16 +885,33 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
         state_dir: std::env::temp_dir().to_string_lossy().into_owned(),
         list_dir: config.ml_list_dir.clone(),
         list_chunk_size: config.ml_list_chunk,
+        list_max_entries: config.ml_list_max,
         algo: config.ml_algo.clone(),
+        // feroxbuster --depth: default 4, 0 = infinite recursion
+        max_depth: if config.depth == 0 { usize::MAX } else { config.depth },
         ..MlConfig::default()
     };
     if !cfg.list_dir.is_empty() {
-        // list mode is driven entirely by --ml-list-dir; -w is not used for seeding
+        // list mode is driven entirely by --ml-list-dir; -w is not used for seeding.
+        // Re-apply the whole (recursively loaded) wordlist tree to every discovered
+        // directory, to the recursion depth, until the tree and the lists are fully
+        // consumed — so don't let the default round/request caps cut a deep scan
+        // short. Depth (--depth, 0 = unlimited) and soft-404 filtering bound it;
+        // use --scan-limit or Ctrl-C to stop a very large run.
+        cfg.request_budget = usize::MAX;
+        cfg.max_rounds = usize::MAX;
         if !config.wordlist.is_empty() {
             log::warn!(
                 "ml-loop: --ml-list-dir is set; -w/--wordlist is superseded and ignored"
             );
         }
+        log::info!(
+            "ml-loop list mode: dir={} (recursive), max-depth={}, chunk={}, max-entries={}",
+            cfg.list_dir,
+            if cfg.max_depth == usize::MAX { "unlimited".to_string() } else { cfg.max_depth.to_string() },
+            cfg.list_chunk_size,
+            if cfg.list_max_entries == 0 { "unlimited".to_string() } else { cfg.list_max_entries.to_string() },
+        );
     } else if let Some(wl) = config.wordlist.first() {
         cfg.seed_wordlist = wl.clone();
         cfg.seed_per_round = 10;

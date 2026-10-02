@@ -288,15 +288,31 @@ feroxbuster --ml-model ./model.json -u https://target.test -w common.txt
 # list-driven loop with an explicit prediction algorithm (DynSDT shown)
 feroxbuster --ml-loop --ml-list-dir ./lists --ml-algo dynsdt \
             --ml-model ./model.json -u https://target.test
+
+# full SecLists, recursively, re-applied to every directory to depth 4
+feroxbuster --ml-loop --ml-list-dir /usr/share/seclists/Discovery/Web-Content \
+            --depth 4 --ml-algo dynsdt --ml-model ./model.json -u https://target.test
+# (--depth 0 = unlimited recursion; --ml-list-max 0 = every entry in the tree)
 ```
+
+In list mode the wordlist directory is loaded **recursively** (the whole tree, e.g.
+all of SecLists `Discovery/Web-Content` and its sub-folders) and **re-applied to
+every directory the scan discovers**, like feroxbuster's own recursion: each found
+endpoint is fuzzed with the full list, and after each hit the model predicts likely
+sibling paths and tries those first before continuing the list. Recursion follows
+`--depth` (`0` = unlimited), and list mode lifts the round/request caps so the scan
+runs until the directory tree and the lists are fully consumed (bound it with
+`--depth`, `--scan-limit`, or Ctrl-C).
 
 | Flag | Meaning (default) |
 |---|---|
 | `--ml` | Enable the ML layer. |
 | `--ml-loop` | Run the adaptive bounded-scan feedback loop instead of a single scan. |
 | `--ml-algo <name>` | Prediction algorithm: `auto` (default) · `markov` · `trie` · `dynsdt` · `tst`. |
-| `--ml-list-dir <dir>` | Directory of wordlists to drive `--ml-loop` (list mode; skips fingerprinting). |
-| `--ml-list-chunk <n>` | List entries injected per round in list mode (`200`). |
+| `--ml-list-dir <dir>` | Directory of wordlists (loaded **recursively**) driving `--ml-loop` (list mode; skips fingerprinting). |
+| `--ml-list-chunk <n>` | List entries injected per directory per round in list mode (`200`). |
+| `--ml-list-max <n>` | Cap on entries loaded from the tree; `0` = unlimited — every entry (default). |
+| `--depth <n>` | Recursion depth for list mode (`4`; `0` = unlimited). |
 | `--ml-model <path>` | Load + update a learned model; written back on exit. Implies `--ml`. |
 | `--ml-order <n>` | Max Markov order / PPM back-off depth (`3`; only for `--ml-algo markov`). |
 | `--ml-predictions <n>` | Base predictions injected per directory (`25`; bandit scales 25–100 %). |

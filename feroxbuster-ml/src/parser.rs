@@ -707,6 +707,13 @@ pub fn initialize() -> Command {
                 .help_heading("Scan settings")
                 .help("List entries to inject per round when --ml-list-dir is set (default: 200)")
         ).arg(
+            Arg::new("ml_list_max")
+                .long("ml-list-max")
+                .value_name("COUNT")
+                .num_args(1)
+                .help_heading("Scan settings")
+                .help("Cap on entries loaded from --ml-list-dir (whole tree, recursive); 0 = unlimited (default), use every entry")
+        ).arg(
             Arg::new("ml_algo")
                 .long("ml-algo")
                 .value_name("ALGO")

@@ -1,6 +1,6 @@
 use super::utils::{
     backup_extensions, depth, deserialize_wordlist, determine_requester_policy, extract_links,
-    ignored_extensions, methods, ml_algo, ml_fp_margin, ml_list_chunk, ml_order, ml_predictions, ml_rank,
+    ignored_extensions, methods, ml_algo, ml_fp_margin, ml_list_chunk, ml_list_max, ml_order, ml_predictions, ml_rank,
     ml_scheduler, ml_soft404, parse_request_file, report_and_exit, request_protocol, response_size_limit,
     save_state, serialized_type, split_header, split_query, status_codes, threads, timeout,
     user_agent, wordlist, OutputLevel, RequesterPolicy,
@@ -369,6 +369,10 @@ pub struct Configuration {
     #[serde(default = "ml_list_chunk")]
     pub ml_list_chunk: usize,
 
+    /// max entries loaded from --ml-list-dir (whole tree, recursive); 0 = unlimited
+    #[serde(default = "ml_list_max")]
+    pub ml_list_max: usize,
+
     /// prediction algorithm for --ml-loop: auto | markov | trie | dynsdt | tst
     #[serde(default = "ml_algo")]
     pub ml_algo: String,
@@ -473,6 +477,7 @@ impl Default for Configuration {
             ml_loop: false,
             ml_list_dir: String::new(),
             ml_list_chunk: ml_list_chunk(),
+            ml_list_max: ml_list_max(),
             ml_algo: ml_algo(),
             ml_model: String::new(),
             ml_order: ml_order(),
@@ -1068,6 +1073,12 @@ impl Configuration {
             "ml_list_chunk",
             usize
         );
+        update_config_with_num_type_if_present!(
+            &mut config.ml_list_max,
+            args,
+            "ml_list_max",
+            usize
+        );
         update_config_if_present!(&mut config.ml_algo, args, "ml_algo", String);
         update_config_if_present!(&mut config.ml_model, args, "ml_model", String);
         if !config.ml_model.is_empty() {
@@ -1490,6 +1501,7 @@ impl Configuration {
         update_if_not_default!(&mut conf.ml_loop, new.ml_loop, false);
         update_if_not_default!(&mut conf.ml_list_dir, new.ml_list_dir, String::new());
         update_if_not_default!(&mut conf.ml_list_chunk, new.ml_list_chunk, ml_list_chunk());
+        update_if_not_default!(&mut conf.ml_list_max, new.ml_list_max, ml_list_max());
         update_if_not_default!(&mut conf.ml_algo, new.ml_algo, ml_algo());
         update_if_not_default!(&mut conf.ml_model, new.ml_model, String::new());
         update_if_not_default!(&mut conf.ml_order, new.ml_order, ml_order());

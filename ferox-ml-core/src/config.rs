@@ -80,6 +80,10 @@ pub struct Config {
     /// How many list entries to inject per round.
     #[serde(default = "default_list_chunk")]
     pub list_chunk_size: usize,
+    /// Max entries loaded from the wordlist directory (the whole tree, recursively).
+    /// `0` = unlimited — load every entry in the directory tree.
+    #[serde(default)]
+    pub list_max_entries: usize,
 }
 
 fn default_list_chunk() -> usize {
@@ -118,6 +122,7 @@ impl Default for Config {
             model_path: String::new(),
             list_dir: String::new(),
             list_chunk_size: default_list_chunk(),
+            list_max_entries: 0, // unlimited: use every entry in the tree
         }
     }
 }

@@ -194,6 +194,12 @@ pub(super) fn ml_list_chunk() -> usize {
     200
 }
 
+/// default cap on entries loaded from --ml-list-dir (0 = unlimited; use every
+/// entry in the whole directory tree, e.g. all of SecLists Discovery/Web-Content)
+pub(super) fn ml_list_max() -> usize {
+    0
+}
+
 /// default prediction algorithm for the ML loop (auto = dynsdt in list mode,
 /// markov otherwise)
 pub(super) fn ml_algo() -> String {

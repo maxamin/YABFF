@@ -58,16 +58,31 @@ pub fn load_wordlist(path: &str, cap: usize) -> std::io::Result<Vec<String>> {
         .collect())
 }
 
-/// Load every file in `dir` (sorted by path for determinism) and merge them into
-/// one de-duplicated, order-preserving pool. Lines are trimmed; empty lines and
-/// `#` comments are skipped. `cap` bounds the total number of entries. Files that
-/// can't be read (e.g. binary) are skipped rather than aborting the whole load.
+/// Load every file in `dir` **recursively** (walking the whole directory tree,
+/// e.g. all of SecLists' `Discovery/Web-Content`) and merge them into one
+/// de-duplicated, order-preserving pool. Files are read in sorted full-path order
+/// for determinism. Lines are trimmed; empty lines and `#` comments are skipped.
+/// `cap` bounds the total number of entries; **`cap == 0` means unlimited** (use
+/// every entry in the tree). Files that can't be read (e.g. binary) are skipped
+/// rather than aborting the whole load.
 pub fn load_list_dir(dir: &str, cap: usize) -> std::io::Result<Vec<String>> {
-    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(dir)?
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.is_file())
-        .collect();
-    files.sort(); // determinism: filename order, not read_dir order
+    // recursively collect every file under `dir`
+    let mut files: Vec<std::path::PathBuf> = Vec::new();
+    let mut stack = vec![std::path::PathBuf::from(dir)];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else {
+            continue; // unreadable directory: skip
+        };
+        for p in rd.filter_map(|e| e.ok().map(|e| e.path())) {
+            if p.is_dir() {
+                stack.push(p);
+            } else if p.is_file() {
+                files.push(p);
+            }
+        }
+    }
+    files.sort(); // determinism: full-path order, not read_dir order
+    let unlimited = cap == 0;
     let mut pool: Vec<String> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
     for f in files {
@@ -81,7 +96,7 @@ pub fn load_list_dir(dir: &str, cap: usize) -> std::io::Result<Vec<String>> {
             }
             if seen.insert(w.to_string()) {
                 pool.push(w.to_string());
-                if pool.len() >= cap {
+                if !unlimited && pool.len() >= cap {
                     return Ok(pool);
                 }
             }
@@ -222,6 +237,28 @@ mod tests {
         // cap bounds the total
         let capped = load_list_dir(dir.to_str().unwrap(), 2).unwrap();
         assert_eq!(capped, ["admin", "login"]);
+        // cap == 0 means unlimited (every entry)
+        let all = load_list_dir(dir.to_str().unwrap(), 0).unwrap();
+        assert_eq!(all, ["admin", "login", "api", "users"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_list_dir_walks_subdirectories() {
+        // a SecLists-style tree: files nested in subdirectories must all be read
+        let dir = std::env::temp_dir().join(format!("ferox-tree-{}", std::process::id()));
+        let sub = dir.join("CMS");
+        let deep = sub.join("inner");
+        std::fs::create_dir_all(&deep).unwrap();
+        std::fs::write(dir.join("top.txt"), "admin\n").unwrap();
+        std::fs::write(sub.join("wp.txt"), "wp-login.php\n").unwrap();
+        std::fs::write(deep.join("more.txt"), "xmlrpc.php\nadmin\n").unwrap(); // "admin" dedups
+        let pool = load_list_dir(dir.to_str().unwrap(), 0).unwrap();
+        // all three files contributed; sorted by full path: CMS/inner/more, CMS/wp, top
+        assert!(pool.contains(&"admin".to_string()));
+        assert!(pool.contains(&"wp-login.php".to_string()));
+        assert!(pool.contains(&"xmlrpc.php".to_string()));
+        assert_eq!(pool.len(), 3, "deduped across the whole tree: {pool:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

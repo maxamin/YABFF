@@ -175,7 +175,7 @@ impl Campaign {
         // scheduled per arm so predictions aren't rescanned when an arm is re-served.
         let mut pool = if list_mode {
             Some(ListPool::new(
-                load_list_dir(&self.cfg.list_dir, 100_000).unwrap_or_default(),
+                load_list_dir(&self.cfg.list_dir, self.cfg.list_max_entries).unwrap_or_default(),
             ))
         } else {
             None
@@ -292,6 +292,13 @@ impl Campaign {
             // list fill: ML predictions first, then the next chunk of THIS
             // directory's own cursor over the full wordlist (re-applied per
             // directory), BM25-ranked against the observed corpus, bounded by budget.
+            //
+            // `arm_tried` records only the *predictions* scheduled for this arm — a
+            // small set bounded by the model's vocabulary — so predictions aren't
+            // re-issued when the arm is re-served. List words are NOT stored here:
+            // the per-arm cursor already serves each list entry once per directory,
+            // so with the whole SecLists tree re-applied per directory the memory
+            // stays O(arms × predicted-tokens), not O(arms × wordlist).
             if let Some(pool) = pool.as_mut() {
                 let tried = arm_tried.entry(arm.clone()).or_default();
                 // drop predictions already scheduled for this arm, and record the rest
@@ -300,6 +307,8 @@ impl Campaign {
                 let room = remaining.saturating_sub(words.len());
                 if room > 0 {
                     let want = room.min(self.cfg.list_chunk_size);
+                    // skip words already scheduled as predictions for this arm; the
+                    // cursor position handles list-word uniqueness per directory.
                     let chunk = pool.next_chunk(&arm, &*tried, want);
                     let ranked: Vec<String> = if self.cfg.ranker == "bm25" {
                         let pairs: Vec<(String, f64)> =
@@ -309,9 +318,7 @@ impl Campaign {
                         chunk
                     };
                     for w in ranked.into_iter().take(room) {
-                        if tried.insert(w.clone()) {
-                            words.push(w);
-                        }
+                        words.push(w); // list words tracked by the cursor, not `tried`
                     }
                 }
             }
@@ -423,7 +430,7 @@ impl Campaign {
         // fingerprinting, no profile reporting).
         let list_mode = !self.cfg.list_dir.is_empty();
         let list_pool: Vec<String> = if list_mode {
-            load_list_dir(&self.cfg.list_dir, 100_000).unwrap_or_default()
+            load_list_dir(&self.cfg.list_dir, self.cfg.list_max_entries).unwrap_or_default()
         } else {
             Vec::new()
         };
