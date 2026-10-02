@@ -297,6 +297,20 @@ seed is worth a **5×** jump in resources and the difference between a flat scan
 depth-3 recursion. Pair it with §E (where the same seed wasted requests on an
 off-profile target) for the full picture.
 
+**End-to-end with the default (no `--ml-algo` flag).** Because `markov` is now the
+default, this result is what you get **out of the box** — the same WordPress lab, run
+as plain `feroxbuster --ml-loop -u <target>`:
+
+```
+profile          : WORDPRESS_CMS
+algorithm        : markov          # the default, no flag passed
+resources found  : 21   (17 predicted, 14 rounds, 233 requests, depth 3)
+```
+
+vs. the same command with `--ml-algo dynsdt` → **4 resources, depth 1**. So the
+default delivers the ~5× / depth-3-vs-1 advantage with zero configuration; the
+summary's `algorithm: markov` line confirms the default is what ran.
+
 ### Takeaway
 
 On a deep target with a wordlist that covers the leaf names, **every algorithm now
