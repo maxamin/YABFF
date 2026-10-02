@@ -203,10 +203,29 @@ Identical reach (the full depth-4 set) and all but one request, at both a coarse
 a tight chunk. This is the expected result: list mode runs both **unseeded**, online
 learning is exact (neither generalizes across siblings, §A), and the per-directory
 walk finds every token regardless of predictor. The only measurable difference is
-**representation** — Markov stores multi-order context rows (~1.75× the bytes of the
-DynSDT trie). Markov's discovery edge appears only with its **profile seed**
-(non-list mode, §B), which list mode disables. Choose between them on query
-cost/memory (DynSDT) vs cold-start priors (seeded Markov), not on list-mode reach.
+**representation** — the models serialize to different sizes depending on whether the
+learned structure has more distinct n-gram contexts or more trie nodes (here the
+Markov model is larger; on the warm-cache run below it is smaller — it is
+dataset-dependent, not a fixed ratio). Markov's discovery edge appears only with its
+**profile seed** (non-list mode, §B), which list mode disables. Choose between them
+on query cost/memory vs cold-start priors, not on list-mode reach.
+
+**Same comparison with the ranked-pool cache warm.** Repeating the comparison with
+the full SecLists tree (`Discovery/Web-Content`, 4.4M entries, `--ml-list-max 300`)
+after the pool cache is warm — so the ~160 s one-time ranking is out of the picture
+and only scan behavior is timed:
+
+| `--algo` | pool load | elapsed | rounds | requests | resources | model |
+|----------|-----------|:---:|:---:|:---:|:---:|:---:|
+| `markov` | from cache | 9 s | 10 | 1,511 | 12 | 838 B |
+| `dynsdt` | from cache | 8 s | 10 | 1,513 | 12 | 1,124 B |
+
+Both load `(recursive, from cache)` in a few seconds (vs ~159 s cold), then run
+neck-and-neck: identical reach (12 resources, 10 rounds), requests within 2, elapsed
+within noise. With the load cost removed the predictors are, again, interchangeable
+for discovery in list mode — the only delta is model size (direction flips vs the
+deep-lab run above, confirming it is representation/dataset-dependent). See
+[`recursive-seclists-depth.md`](recursive-seclists-depth.md) §3c for the cache.
 
 ### E. Non-list mode on the real lab — seeded Markov vs empty DynSDT
 
