@@ -230,6 +230,35 @@ profile: it pays off handsomely when it does (§B, 100% vs 0% cold) and costs wa
 requests when it doesn't. DynSDT, with no seed, simply learns from the probe and
 predicts only what it has seen.
 
+### F. WordPress target — the seed pays off
+
+§E showed the seed costing requests on an off-profile target. The matching case:
+a WordPress target, non-list mode, **no wordlist** (pure prediction). (Docker
+networking is unavailable in this sandbox — no bridge, no port publishing — so this
+is a faithful WordPress **mock**: real WP paths, headers, `wordpress_*` cookies and
+`xmlrpc.php` → 405, serving the standard `wp-content/{plugins,themes,uploads}/…`
+tree. It fingerprints as `WORDPRESS_CMS`, so the engine path is identical to a real
+WP.)
+
+| `--algo` (non-list) | profile | rounds | requests | resources | max depth |
+|---------------------|---------|:---:|:---:|:---:|:---:|
+| `markov` (seeded)   | WORDPRESS_CMS | 14 | 233 | **21** | **3** |
+| `dynsdt` (empty)    | WORDPRESS_CMS | 1 | 14 | 4 | 1 |
+
+Both share the same 4 probe-phase hits (`/index.php`, `/robots.txt`, `/wp-json`,
+`/xmlrpc.php`). From there the `WORDPRESS_CMS` **seed** drives Markov through the
+whole tree with zero wordlist — `wp-admin`, `wp-content`, `wp-includes`, then
+`wp-content/{plugins,themes,uploads}`, then `plugins/{akismet,woocommerce}`,
+`themes/{twentytwentyone,twentytwentytwo}`, `uploads/{2023,2024}` — **21 resources to
+depth 3, 17 of them predicted**. Empty DynSDT has no seed and `wp-admin`/`wp-content`
+aren't among the probe paths, so it never learns a directory to expand: it stops at
+the 4 probe files, depth 1.
+
+This is the live counterpart of §B: when the target matches a shipped profile, the
+seed is worth a **5×** jump in resources and the difference between a flat scan and a
+depth-3 recursion. Pair it with §E (where the same seed wasted requests on an
+off-profile target) for the full picture.
+
 ### Takeaway
 
 On a deep target with a wordlist that covers the leaf names, **every algorithm now
