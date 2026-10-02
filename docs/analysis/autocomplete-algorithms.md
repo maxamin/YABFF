@@ -91,17 +91,86 @@ feroxbuster --ml-loop --ml-algo <A> --ml-list-dir <dir> --ml-list-chunk 50 \
 All four recover the same six resources (`/assets`, `/ftp`, `/robots.txt`,
 `/main.js`, `/video`, and one more). The three tree models are indistinguishable in
 behavior here — identical rounds, requests, and hits — as expected, since they hold
-the same counts. **Markov takes an extra round and 6 more requests**: its back-off
-proposes additional candidates beyond the list, which is exactly its
-generalization showing up as extra probing. On this shallow target that extra work
-buys nothing; on a deep, structured target it is what lets Markov reach subtrees a
-pure exact-prefix trie would never guess (see the stock-vs-`--ml` A/B, where the
-generalizing model reaches the whole `/api/v1`+`/api/v2` subtree).
+the same counts. **Markov takes an extra round and 6 more requests**: its profile
+seed proposes additional candidates beyond the list. On this shallow target that
+extra work buys nothing; the deeper benchmark below shows exactly when it pays off.
 
 Elapsed time (~6.5 s each) is dominated by the network and the soft-404 probing,
 not the algorithm — at this scale the model's own cost is noise. The complexity
 differences in the table above matter at scale (large directories, many learned
 children), not on a six-path lab.
+
+## Deeper target — where the algorithms actually diverge
+
+A six-path lab can't separate the models. To probe depth, a deterministic,
+network-free harness ([`ferox-ml-core/examples/algo_bench.rs`](../../ferox-ml-core/examples/algo_bench.rs),
+run with `cargo run -p ferox-ml-core --example algo_bench`) builds a **deep,
+repetitive** synthetic site — `{api,app,shop}/v{1,2,3}/{8 leaves}`, 84 resources —
+and measures the three places the choice could matter.
+
+### A. Online prediction recall (train on `*/v1/*`, k = 8)
+
+Each model learns the directory structure plus **only `v1`'s** leaves, then predicts
+children of a seen version (`v1`) and of the held-out versions (`v2`, `v3`):
+
+| `--algo` | seen `v1` | held-out `v2`,`v3` |
+|----------|:---:|:---:|
+| `markov` | 100% | **0%** |
+| `trie`   | 100% | **0%** |
+| `dynsdt` | 100% | **0%** |
+| `tst`    | 100% | **0%** |
+
+All four are identical: they **memorize** perfectly and **none generalizes across
+sibling directories** from online learning alone. This corrects a common
+assumption — Markov's `n`-gram back-off goes `[api,v2] → [v2] → ⌀`, and the empty
+context only holds *first* segments, so it does not transfer `v1`'s leaf names to an
+unseen `v2`. For discovery purposes the tree models and online Markov are
+equivalent; they differ only in query cost and memory (the first table).
+
+### B. Cold-start recall from a profile seed (zero observations, k = 12)
+
+The one capability that is **not** shared: Markov ships per-profile seed matrices.
+Built on the `REST_API` profile with **no observations**, each model predicts the
+canonical children at increasing depth:
+
+| `--algo` | `/` | `/api` | `/api/v1` | `/api/v2` |
+|----------|:---:|:---:|:---:|:---:|
+| `markov` | **100%** | **100%** | **100%** | **100%** |
+| `trie`   | 0% | 0% | 0% | 0% |
+| `dynsdt` | 0% | 0% | 0% | 0% |
+| `tst`    | 0% | 0% | 0% | 0% |
+
+This is the real, documented source of Markov's discovery edge on structured
+targets (cf. the stock-vs-`--ml` A/B: **19 vs 11** resources): the seed predicts
+`v1`/`v2` and their children before anything is observed. The tree models have no
+cold-start mechanism, so they rely entirely on the wordlist until they have learned.
+
+### C. End-to-end list-mode scan (84-resource site, 14 tokens + 60 junk)
+
+| `--algo` | found | coverage | requests | rounds |
+|----------|:---:|:---:|:---:|:---:|
+| `markov` | 3 | 4% | 106 | 19 |
+| `trie`   | 3 | 4% | 90 | 19 |
+| `dynsdt` | 3 | 4% | 90 | 19 |
+| `tst`    | 3 | 4% | 90 | 19 |
+
+All four tie at the three top-level directories. This is a property of **list
+mode**, not the predictor: the wordlist pool is consumed by a single forward cursor
+that does not re-try words per directory, and online learning can't bootstrap a leaf
+it has never seen — so depth is bounded identically for every model. (Markov issues
+a few more requests from its seed but finds nothing extra here.) Reaching the deep
+leaves needs either a profile seed (non-list mode) or a wordlist re-applied per
+directory — not a different tree structure.
+
+### Takeaway
+
+On a deep target the **predictor choice does not change *what* the tree models
+find** — they memorize identically and none generalizes online. Two levers do
+matter: **cold-start priors** (only Markov has them → use it on cold, structured
+targets) and **query cost/memory at scale** (DynSDT's output-sensitive `O(|p| + k
+log k)` top-k → use it once a directory has accumulated many learned children). The
+best of both is `--learn` to warm a model, then scan with the algorithm whose query
+profile fits.
 
 ## Cross-run accumulation
 
@@ -113,12 +182,15 @@ holds for all four.
 
 ## How to choose
 
-- **List-driven fuzzing against one target** → `dynsdt` (default). Output-sensitive
-  top-k as the learned tree grows.
-- **Cold start / sparse data / want generalization** → `markov`. It guesses in
-  unseen contexts; it ships seed matrices.
+- **Cold start on a structured target (REST, Spring, WordPress, …)** → `markov`.
+  Its profile seed predicts the canonical tree before anything is observed (table B);
+  no tree model can.
+- **List-driven fuzzing once you have/accumulate observations** → `dynsdt` (default).
+  Output-sensitive top-k as the learned tree grows large.
 - **Smallest persisted model / simplest baseline** → `trie`.
 - **Memory-locality-sensitive layout experiment** → `tst`.
+- **Best of both** → `--learn` to warm a model from authorized labs, then scan with
+  the algorithm whose query profile fits.
 
 Reproduce: build the workspace, point `--ml-list-dir` at any directory of
 wordlists, and sweep `--ml-algo` over `markov trie dynsdt tst` against an authorized

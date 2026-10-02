@@ -148,13 +148,15 @@ is the selector — so swapping algorithms is a flag, not a code change:
 - **`tst`** — a ternary search tree: the same trie stored BST-linked (`lo`/`eq`/`hi`),
   trading hashing for pointer-light navigation and locality.
 
-All three tree models store the same counts, so they find the **same paths**; they
-differ in query cost and memory. Markov differs in *kind* — it generalizes across
-contexts. `learn()` updates whichever model is selected online from every
-discovered URL, and all of them serialize to JSON and **merge** across runs
-(more runs → better model).
+All three tree models store the same counts, so they find the **same paths** and are
+interchangeable for discovery — they differ only in query cost and memory. Markov
+differs in *kind*: it ships **per-profile seed matrices**, so it predicts a target's
+canonical structure *before* anything is observed — the one capability the tree
+models have no equivalent for. `learn()` updates whichever model is selected online
+from every discovered URL, and all of them serialize to JSON and **merge** across
+runs (more runs → better model).
 
-| `--algo` | structure | top-k query | generalizes? | model after lab* |
+| `--algo` | structure | top-k query | cold-start seed | model after lab* |
 |----------|-----------|-------------|:---:|---|
 | `markov` | n-gram counts + back-off | `O(order · σ)` per context | **yes** | 443 B |
 | `trie`   | frequency prefix trie | `O(m + c log c)` (scan subtree) | no | **274 B** |
@@ -163,12 +165,16 @@ discovered URL, and all of them serialize to JSON and **merge** across runs
 
 <sub>`p`/`m` = prefix length · `c` = completions under the prefix · `k` = results wanted · `σ` = fan-out. *Model = serialized JSON after the Juice Shop list-mode benchmark (6 paths learned).</sub>
 
-**Live sweep** (Juice Shop, same 20-entry list dir, `--ml-list-chunk 50`): all four
-recover the **same 6 resources**; the tree models in **1 round / 20 requests**,
-Markov in **2 rounds / 26 requests** (its back-off proposes extra candidates, so it
-probes more). DynSDT is the list-mode default because its top-k stays
-output-sensitive when a directory accumulates thousands of learned children. Full
-methodology and numbers: [`docs/analysis/autocomplete-algorithms.md`](docs/analysis/autocomplete-algorithms.md).
+**Shallow sweep** (Juice Shop, same 20-entry list dir): all four recover the **same 6
+resources** — the tree models in 1 round / 20 requests, Markov in 2 / 26 (its seed
+proposes extras). **Deep sweep** (synthetic `{api,app,shop}/v{1,2,3}/{8 leaves}`, run
+`cargo run -p ferox-ml-core --example algo_bench`): the models **memorize identically
+and none generalizes across sibling directories from online learning** (100% recall
+on a seen version, 0% on held-out versions — for all four); the only separation is
+**cold start**, where seeded Markov predicts the canonical `/api/v1`+`/api/v2` tree
+with zero observations (100%) and the tree models score 0%. DynSDT remains the
+list-mode default for its output-sensitive top-k as a directory's learned children
+grow. Full methodology and tables: [`docs/analysis/autocomplete-algorithms.md`](docs/analysis/autocomplete-algorithms.md).
 
 ### 3. Budget scheduling — Thompson / UCB1 bandit
 [`scheduler.rs`](ferox-ml-core/src/scheduler.rs)
