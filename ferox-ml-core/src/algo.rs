@@ -110,10 +110,17 @@ mod tests {
     }
 
     #[test]
-    fn resolve_defaults_depend_on_list_mode() {
-        let cfg = Config::default(); // algo = "" -> auto
-        assert_eq!(resolve(&cfg, true), Algo::DynSdt);
+    fn resolve_defaults_to_markov_and_honors_auto() {
+        // the default is now `markov` (best by benchmarked results), in both modes
+        let cfg = Config::default();
+        assert_eq!(resolve(&cfg, true), Algo::Markov);
         assert_eq!(resolve(&cfg, false), Algo::Markov);
+        // `auto` is still available and stays mode-aware
+        let mut auto = Config::default();
+        auto.algo = "auto".into();
+        assert_eq!(resolve(&auto, true), Algo::DynSdt);
+        assert_eq!(resolve(&auto, false), Algo::Markov);
+        // an explicit algorithm wins
         let mut cfg2 = Config::default();
         cfg2.algo = "tst".into();
         assert_eq!(resolve(&cfg2, true), Algo::Tst);

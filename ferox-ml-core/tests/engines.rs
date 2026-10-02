@@ -662,6 +662,7 @@ fn list_mode_persists_a_dynsdt_model_that_accumulates_across_runs() {
     let cfg = Config {
         list_dir: dir.to_string_lossy().into_owned(),
         state_dir: String::new(), // disable the ranked-pool cache in tests (no litter)
+        algo: "dynsdt".into(), // this test is specifically about DynSDT persistence
         list_chunk_size: 4,
         ranker: "none".into(),
         max_rounds: 10,

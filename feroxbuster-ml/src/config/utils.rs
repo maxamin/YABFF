@@ -200,10 +200,12 @@ pub(super) fn ml_list_max() -> usize {
     0
 }
 
-/// default prediction algorithm for the ML loop (auto = dynsdt in list mode,
-/// markov otherwise)
+/// default prediction algorithm for the ML loop — `markov`, the best by
+/// benchmarked results (ties the tree models for list-mode reach, wins cold-start
+/// via its profile seed). `auto` (dynsdt in list mode, markov otherwise) remains
+/// available.
 pub(super) fn ml_algo() -> String {
-    String::from("auto")
+    String::from("markov")
 }
 
 /// default max response size to read (4MB to prevent OOM issues)

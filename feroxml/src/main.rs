@@ -86,11 +86,12 @@ struct Cli {
     #[arg(long)]
     classifier: Option<String>,
 
-    /// Prediction algorithm: auto | markov | trie | dynsdt | tst. `auto` picks
-    /// DynSDT in list mode and the profile-seeded Markov model otherwise.
-    /// Profile-match rule: `markov` carries cold-start profile seeds (best when the
-    /// target matches a shipped profile, e.g. WordPress/REST); `dynsdt`/`trie` learn
-    /// only from observations (best off-profile, or once warmed via --model).
+    /// Prediction algorithm: markov (default, best by benchmarked results) | trie |
+    /// dynsdt | tst | auto (DynSDT in list mode, the profile-seeded Markov model
+    /// otherwise). Profile-match rule: `markov` carries cold-start profile seeds
+    /// (best when the target matches a shipped profile, e.g. WordPress/REST);
+    /// `dynsdt`/`trie` learn only from observations (best off-profile, or once warmed
+    /// via --model).
     #[arg(long)]
     algo: Option<String>,
 

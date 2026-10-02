@@ -126,11 +126,11 @@ interface (predict · learn · JSON save/merge), and [`algo.rs`](ferox-ml-core/s
 is the selector — so swapping algorithms is a flag, not a code change:
 
 ```
---ml-algo auto      # default: DynSDT in list mode, seeded Markov otherwise
---ml-algo markov    # variable-order Markov / PPM
+--ml-algo markov    # variable-order Markov / PPM  (default — best by benchmarked results)
 --ml-algo trie      # plain frequency prefix trie (naive-tree baseline)
 --ml-algo dynsdt    # dynamic score-decomposed trie (heap top-k autocomplete)
 --ml-algo tst       # ternary search tree
+--ml-algo auto      # DynSDT in list mode, seeded Markov otherwise
 ```
 
 - **`markov`** — transition counts keyed on contexts up to **order 3**
@@ -175,9 +175,11 @@ forward). The predictor only changes *reach* where the wordlist falls short: tra
 on one version's branches, **none generalizes across sibling directories online**
 (100% recall on a seen version, 0% on held-out — all four), and the only separation
 is **cold start**, where seeded Markov predicts the canonical `/api/v1`+`/api/v2`
-tree with zero observations (100%) vs 0% for the tree models. DynSDT remains the
-list-mode default for its output-sensitive top-k as a directory's learned children
-grow. Full methodology and tables: [`docs/analysis/autocomplete-algorithms.md`](docs/analysis/autocomplete-algorithms.md).
+tree with zero observations (100%) vs 0% for the tree models — which is why **Markov
+is the default** (best by results: it never finds less, and wins cold-start). DynSDT
+stays the pick when you want its output-sensitive top-k as a directory's learned
+children grow (`--ml-algo dynsdt`, or `--ml-algo auto`). Full methodology and tables:
+[`docs/analysis/autocomplete-algorithms.md`](docs/analysis/autocomplete-algorithms.md).
 
 **Choosing an algorithm — the profile-match rule.** Markov is the only model with
 **cold-start seeds**, and that seed is a *bet that the target matches a shipped
@@ -188,12 +190,13 @@ measured both ways:
 |---|---|---|
 | **matches** a profile | `markov` (seeded) | seed predicts the canonical tree cold — **WordPress: 21 resources to depth 3 vs 4 for an unseeded model** |
 | **off-profile** | `dynsdt` / `trie` (or `--learn`-warmed) | avoids the seed's misses — **Juice Shop: seeded Markov spent +59% requests for 0 extra resources** |
-| **list-driven** (`--ml-list-dir`) | `dynsdt` (default) | all models reach the same coverage; DynSDT's `O(\|p\|+k log k)` top-k and smaller model win as learned children grow |
+| **list-driven** (`--ml-list-dir`) | `markov` (default) or `dynsdt` | all models reach the same coverage; pick `dynsdt` for its `O(\|p\|+k log k)` top-k as learned children grow |
 
-So: reach for `markov` when you recognize the stack and it matches a profile; prefer
-`dynsdt` (the default) when the target is off-profile, when you're driving a wordlist,
-or once a model has accumulated real observations; and use `--learn` /`--ml-model` to
-carry learning across runs so either model starts smarter next time. Evidence:
+`markov` is the **default** — by benchmarked results it never finds less than the
+tree models and wins cold-start, so it is the safe out-of-the-box choice. Prefer
+`dynsdt` when you're driving a large wordlist and want its output-sensitive top-k /
+smaller query cost as a directory accumulates children; both are a `--ml-algo` away,
+and `--learn` / `--ml-model` carry learning across runs. Evidence:
 [`docs/analysis/autocomplete-algorithms.md`](docs/analysis/autocomplete-algorithms.md)
 §B/§E/§F.
 
@@ -313,7 +316,7 @@ bound.
 |---|---|
 | `--ml` | Enable the ML layer. |
 | `--ml-loop` | Run the adaptive bounded-scan feedback loop instead of a single scan. |
-| `--ml-algo <name>` | Prediction algorithm: `auto` (default) · `markov` · `trie` · `dynsdt` · `tst`. |
+| `--ml-algo <name>` | Prediction algorithm: `markov` (default) · `trie` · `dynsdt` · `tst` · `auto`. |
 | `--ml-list-dir <dir>` | Directory of wordlists (loaded **recursively**, ranked by signal) driving `--ml-loop` (list mode; skips fingerprinting). |
 | `--ml-list-chunk <n>` | List entries injected per directory per round in list mode (`200`). |
 | `--ml-list-max <n>` | Cap on entries loaded from the tree (keeps the **top-N by signal**); `0` = unlimited — every entry (default). |
@@ -347,7 +350,7 @@ feroxml -u https://target.test --i-have-authorization --model .feroxml/model.jso
 | `--learn` | Learn mode: train a model instead of scanning. |
 | `--model <path>` | Model to load+update (scan) or write (learn). |
 | `--scope <host>` | Extra in-scope hosts (repeatable); out-of-scope URLs are dropped. |
-| `--algo <name>` | Prediction algorithm: `auto` (default) · `markov` · `trie` · `dynsdt` · `tst`. |
+| `--algo <name>` | Prediction algorithm: `markov` (default) · `trie` · `dynsdt` · `tst` · `auto`. |
 | `--scheduler` / `--classifier` | `thompson\|ucb1\|round_robin` / `nearest_centroid\|kmeans`. |
 | `--top-n` / `--max-rounds` / `--max-depth` / `--request-budget` | Loop/budget limits. |
 | `--seed-wordlist <file>` / `--seed-per-round <n>` | Mix baseline paths alongside predictions. |
@@ -397,8 +400,8 @@ The ML path is measured, not asserted — all three are reproducible and documen
 - **Autocomplete-algorithm comparison** — [`docs/analysis/autocomplete-algorithms.md`](docs/analysis/autocomplete-algorithms.md).
   Markov vs. the tree models (frequency trie, DynSDT, TST) selectable via `--algo`:
   query complexity, memory, and a live Juice Shop sweep. The tree models find the
-  same paths; DynSDT keeps top-k **output-sensitive** (`O(|p| + k log k)`), which is
-  why it is the list-mode default.
+  same paths; **Markov is the default** (best by results — ties list-mode reach, wins
+  cold-start), with DynSDT's output-sensitive `O(|p| + k log k)` top-k a flag away.
 - **Full recursive SecLists at unlimited depth** — [`docs/analysis/recursive-seclists-depth.md`](docs/analysis/recursive-seclists-depth.md).
   The loader ingests the whole `Discovery/Web-Content` tree (**4,409,610 entries**,
   386 files) and re-applies it to every directory; list mode **defaults to unlimited

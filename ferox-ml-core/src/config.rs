@@ -11,9 +11,10 @@ pub struct Config {
     // --- engine selection (advanced-algorithm feature flags) ---
     /// `nearest_centroid` (default) | `kmeans`
     pub classifier: String,
-    /// Prediction algorithm: `auto` (default) | `markov` | `trie` | `dynsdt` |
-    /// `tst`. `auto` picks DynSDT in list mode and the profile-seeded Markov model
-    /// otherwise. See [`crate::algo`].
+    /// Prediction algorithm: `markov` (default — the best by benchmarked results:
+    /// it ties the tree models for list-mode reach and wins cold-start via its
+    /// profile seed) | `trie` | `dynsdt` | `tst` | `auto` (DynSDT in list mode, the
+    /// profile-seeded Markov model otherwise). See [`crate::algo`].
     #[serde(default)]
     pub algo: String,
     /// `ppm` (variable-order, default) | `markov1` — Markov order knob (only used
@@ -94,7 +95,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             classifier: "nearest_centroid".into(),
-            algo: "auto".into(),
+            algo: "markov".into(),
             predictor: "ppm".into(),
             scheduler: "thompson".into(),
             ranker: "bm25".into(),

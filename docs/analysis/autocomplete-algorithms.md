@@ -16,8 +16,10 @@ numbers.
 | `dynsdt` | [`dynsdt.rs`](../../ferox-ml-core/src/dynsdt.rs) | Dynamic Score-Decomposed Trie | tree, exact-prefix |
 | `tst`    | [`tst.rs`](../../ferox-ml-core/src/tst.rs) | ternary search tree | tree, exact-prefix |
 
-`auto` (the default) picks **DynSDT** in list mode (where the model learns the real
-directory tree from scan hits) and the profile-seeded **Markov** model otherwise.
+The default is **`markov`** (best by benchmarked results — it ties the tree models
+for list-mode reach and wins cold-start via its profile seed; see §D/§F). `auto`
+remains available and picks **DynSDT** in list mode and the profile-seeded **Markov**
+model otherwise.
 
 ### Markov / PPM
 Transition counts keyed on contexts up to order 3 (`--ml-order`), additive
@@ -42,8 +44,9 @@ child and the next sibling over a bounded double-ended priority queue — **`O(|
 k log k)`**, independent of how many completions the subtree holds. `observe()`
 bumps a terminal's score and re-sorts the affected nodes up the path online, so the
 structure stays correct as it learns. This output-sensitivity is why it is the
-list-mode default: a directory can accumulate thousands of learned children, and
-DynSDT still returns the top handful without touching the rest.
+recommended choice for large list-driven scans: a directory can accumulate thousands
+of learned children, and DynSDT still returns the top handful without touching the
+rest. (The overall default is `markov` — best by results; see §D.)
 
 ### Ternary search tree (`tst`)
 The same trie stored compactly: each node holds one segment key and three links —
@@ -303,9 +306,10 @@ The predictor changes **reach** only where the wordlist falls short — the
 **cold-start** case, where seeded Markov predicts canonical structure no tree model
 can. And it changes **cost at scale** — DynSDT's output-sensitive `O(|p| + k log k)`
 top-k matters once a directory accumulates many learned children. Rules of thumb:
-`markov` for cold targets **that match a shipped profile** (the seed is a bet — it
-pays off when the structure matches, §B, and wastes requests when it doesn't, §E);
-`dynsdt` (default) once observations accumulate or when the target is off-profile;
+**`markov` is the default** — best by results (never finds less, wins cold-start on a
+target that matches a shipped profile, §B/§F; the seed is a bet that can waste
+requests off-profile, §E, but never costs reach); switch to `dynsdt` for its
+output-sensitive top-k once a list-driven directory accumulates many children;
 `--learn` to warm a model, then scan with the algorithm whose query profile fits.
 
 ## Cross-run accumulation
@@ -321,8 +325,9 @@ holds for all four.
 - **Cold start on a structured target (REST, Spring, WordPress, …)** → `markov`.
   Its profile seed predicts the canonical tree before anything is observed (table B);
   no tree model can.
-- **List-driven fuzzing once you have/accumulate observations** → `dynsdt` (default).
-  Output-sensitive top-k as the learned tree grows large.
+- **List-driven fuzzing once you have/accumulate observations** → `dynsdt`.
+  Output-sensitive top-k as the learned tree grows large. (`markov` is the overall
+  default and ties it for reach.)
 - **Smallest persisted model / simplest baseline** → `trie`.
 - **Memory-locality-sensitive layout experiment** → `tst`.
 - **Best of both** → `--learn` to warm a model from authorized labs, then scan with
