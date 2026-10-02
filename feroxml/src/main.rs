@@ -88,6 +88,9 @@ struct Cli {
 
     /// Prediction algorithm: auto | markov | trie | dynsdt | tst. `auto` picks
     /// DynSDT in list mode and the profile-seeded Markov model otherwise.
+    /// Profile-match rule: `markov` carries cold-start profile seeds (best when the
+    /// target matches a shipped profile, e.g. WordPress/REST); `dynsdt`/`trie` learn
+    /// only from observations (best off-profile, or once warmed via --model).
     #[arg(long)]
     algo: Option<String>,
 

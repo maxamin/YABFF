@@ -713,7 +713,7 @@ pub fn initialize() -> Command {
                 .num_args(1)
                 .value_parser(["auto", "markov", "trie", "dynsdt", "tst"])
                 .help_heading("Scan settings")
-                .help("Prediction algorithm for --ml-loop: auto (default; dynsdt in list mode, markov otherwise), markov, trie, dynsdt, tst")
+                .help("Prediction algorithm for --ml-loop: auto (default; dynsdt in list mode, markov otherwise) | markov | trie | dynsdt | tst. Profile-match rule: markov carries cold-start profile seeds (best when the target matches a shipped profile, e.g. WordPress/REST); dynsdt/trie learn only from observations (best off-profile, list-driven, or once a model is warmed via --ml-model)")
         );
 
     /////////////////////////////////////////////////////////////////////

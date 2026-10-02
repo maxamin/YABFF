@@ -83,7 +83,7 @@ _feroxbuster() {
 '--ml-scheduler=[Bandit that scales per-directory prediction budget (default\: thompson)]:SCHEDULER:(thompson ucb1 round_robin)' \
 '--ml-list-dir=[Directory of wordlists to drive --ml-loop (skips fingerprinting; learns structure from results). Supersedes -w]:DIR:_files -/' \
 '--ml-list-chunk=[List entries to inject per round when --ml-list-dir is set (default\: 200)]:COUNT:_default' \
-'--ml-algo=[Prediction algorithm for --ml-loop\: auto (default; dynsdt in list mode, markov otherwise), markov, trie, dynsdt, tst]:ALGO:(auto markov trie dynsdt tst)' \
+'--ml-algo=[Prediction algorithm for --ml-loop\: auto (default; dynsdt in list mode, markov otherwise) | markov | trie | dynsdt | tst. Profile-match rule\: markov carries cold-start profile seeds (best when the target matches a shipped profile, e.g. WordPress/REST); dynsdt/trie learn only from observations (best off-profile, list-driven, or once a model is warmed via --ml-model)]:ALGO:(auto markov trie dynsdt tst)' \
 '-o+[Output file to write results to (use w/ --json for JSON entries)]:FILE:_files' \
 '--output=[Output file to write results to (use w/ --json for JSON entries)]:FILE:_files' \
 '--debug-log=[Output file to write log entries (use w/ --json for JSON entries)]:FILE:_files' \

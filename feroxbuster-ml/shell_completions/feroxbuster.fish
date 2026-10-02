@@ -45,7 +45,7 @@ ucb1\t''
 round_robin\t''"
 complete -c feroxbuster -l ml-list-dir -d 'Directory of wordlists to drive --ml-loop (skips fingerprinting; learns structure from results). Supersedes -w' -r -f -a "(__fish_complete_directories)"
 complete -c feroxbuster -l ml-list-chunk -d 'List entries to inject per round when --ml-list-dir is set (default: 200)' -r
-complete -c feroxbuster -l ml-algo -d 'Prediction algorithm for --ml-loop: auto (default; dynsdt in list mode, markov otherwise), markov, trie, dynsdt, tst' -r -f -a "auto\t''
+complete -c feroxbuster -l ml-algo -d 'Prediction algorithm for --ml-loop: auto (default; dynsdt in list mode, markov otherwise) | markov | trie | dynsdt | tst. Profile-match rule: markov carries cold-start profile seeds (best when the target matches a shipped profile, e.g. WordPress/REST); dynsdt/trie learn only from observations (best off-profile, list-driven, or once a model is warmed via --ml-model)' -r -f -a "auto\t''
 markov\t''
 trie\t''
 dynsdt\t''
