@@ -105,3 +105,28 @@ juice-shop 1/200/1 → 25/5082/7 · dvwa 1/200/5 → 25/5110/9 · webgoat 1/200/
 now drains the list across the full round budget without tuning the knob; soft-404
 filtering scales with it (juice-shop 5030, wordpress 5024 filtered). WebGoat stays
 0 (its app is under `/WebGoat/`, which the generic lists don't hit).
+
+## DynSDT model (Dynamic Score-Decomposed Trie) — list-mode predictor
+
+The list-mode predictor is now a **Dynamic Score-Decomposed Trie** (`ferox-ml-core/src/trie.rs`),
+following Validark's DynSDT (https://validark.dev/DynSDT/) adapted to URL path segments.
+Each node is a path prefix with its own observation `score` and a cached `subtree_max`
+(the score decomposition); children are kept **sorted by `subtree_max` descending**
+(the horizontal heap property) so top-k autocomplete is a best-first first-child /
+next-sibling walk — O(|p| + k log k), no full child scan. `observe()` bumps a
+terminal's score and re-sorts the affected nodes up the path online, so the model is
+fully dynamic. It serializes to JSON and merges, so repeated runs accumulate.
+
+Non-list mode is unchanged (profile-seeded Markov). The orchestrator picks the
+backend via an internal `Model` enum gated on `list_mode`.
+
+**Live verification (Juice Shop, 127.0.0.1:3000, 12-word list dir):**
+- Run 1: profile LIST_DRIVEN, 5 resources found (assets, robots.txt, main.js, video, ftp),
+  7 soft-404 filtered; model persisted as DynSDT JSON (nodes with seg/score/subtree_max).
+- Run 2 (loads + merges the persisted model): every discovered path's score climbed
+  1.0 → 2.0 — "more runs = more training", confirmed end-to-end.
+
+Tests: 5 unit tests in `trie.rs` (score-ordered top-k, dynamic reorder, deep-completion
+surfacing, merge + JSON round-trip, Predictor trait) plus
+`list_mode_persists_a_dynsdt_model_that_accumulates_across_runs` in `tests/engines.rs`.
+Full suite green: 41 lib + 34 integration in ferox-ml-core.

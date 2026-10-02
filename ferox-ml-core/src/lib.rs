@@ -28,6 +28,7 @@ pub mod ranking;
 pub mod rng;
 pub mod scheduler;
 pub mod tokenize;
+pub mod trie;
 
 // The adaptive orchestration layer: a runner-agnostic budgeted feedback loop that
 // drives a `FeroxRunner` (subprocess today; an in-process runner can implement the

@@ -641,6 +641,63 @@ fn list_driven_campaign_scans_lists_and_predicts_first() {
 }
 
 #[test]
+fn list_mode_persists_a_dynsdt_model_that_accumulates_across_runs() {
+    // List mode trains a Dynamic Score-Decomposed Trie online and writes it to
+    // `model_path`, so a later run reloads it and predicts from day one — more
+    // runs => better model.
+    use ferox_ml_core::trie::DynSdt;
+
+    let dir = std::env::temp_dir().join(format!("ferox-persist-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    std::fs::write(dir.join("a.txt"), "api\n").unwrap();
+    let model_path = dir.join("model.json");
+
+    // the root reveals /api/ and /api/v1, so the trie learns api -> v1.
+    let mut by_url = HashMap::new();
+    by_url.insert(
+        "http://t.test/".to_string(),
+        vec![resp("http://t.test/api/", 200), resp("http://t.test/api/v1", 200)],
+    );
+    let cfg = Config {
+        list_dir: dir.to_string_lossy().into_owned(),
+        list_chunk_size: 4,
+        ranker: "none".into(),
+        max_rounds: 10,
+        request_budget: 1000,
+        max_depth: 5,
+        top_n: 10,
+        model_path: model_path.to_string_lossy().into_owned(),
+        ..Config::default()
+    };
+
+    let calls: CallLog = Rc::new(RefCell::new(Vec::new()));
+    let runner = RecordingRunner { calls: Rc::clone(&calls), by_url: by_url.clone() };
+    Campaign::new(cfg.clone(), Box::new(runner)).run("http://t.test").unwrap();
+
+    // the persisted file is a DynSDT (not a Markov model) carrying the learned tree.
+    let text = std::fs::read_to_string(&model_path).unwrap();
+    let trie = DynSdt::from_json(&text).expect("persisted model should be a DynSDT");
+    let preds = trie.top_k(&["api".to_string()], 5);
+    assert!(preds.iter().any(|(s, _)| s == "v1"), "trie should know api->v1: {preds:?}");
+
+    // a fresh run reloads and merges it: api->v1 now has a higher score than a
+    // first-time observation would (accumulation across runs).
+    let before = preds.iter().find(|(s, _)| s == "v1").map(|(_, v)| *v).unwrap();
+    let runner2 = RecordingRunner { calls: Rc::new(RefCell::new(Vec::new())), by_url };
+    Campaign::new(cfg, Box::new(runner2)).run("http://t.test").unwrap();
+    let trie2 = DynSdt::from_json(&std::fs::read_to_string(&model_path).unwrap()).unwrap();
+    let after = trie2
+        .top_k(&["api".to_string()], 5)
+        .into_iter()
+        .find(|(s, _)| s == "v1")
+        .map(|(_, v)| v)
+        .unwrap();
+    assert!(after > before, "second run should accumulate: {after} !> {before}");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn list_driven_drains_whole_pool_across_rounds() {
     // flat target: the root returns no directories, so without arm re-serve the
     // loop would stop after one chunk. With re-serve it drains the whole pool.

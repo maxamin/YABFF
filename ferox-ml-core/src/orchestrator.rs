@@ -34,6 +34,7 @@ use crate::rng::Rng;
 use crate::scheduler;
 use crate::scope::Scope;
 use crate::tokenize::{last_segment, path_segments};
+use crate::trie::DynSdt;
 use crate::wordlist::{
     build_round_wordlist, load_list_dir, load_wordlist, merge_seed, ListCursor, SeenPaths,
 };
@@ -51,6 +52,56 @@ pub struct Summary {
     pub predicted_hits: usize,
     pub dropped_out_of_scope: usize,
     pub filtered_soft404: usize,
+}
+
+/// The predictor backing a campaign. List mode uses the Dynamic Score-Decomposed
+/// Trie ([`DynSdt`]) — it stores the observed directory-tree structure and serves
+/// top-k autocomplete that sharpens as more real hits are learned. Non-list mode
+/// keeps the profile-seeded [`MarkovModel`]. Both expose predict/learn and
+/// persist to `model_path` (in their own JSON format) so repeated runs accumulate.
+enum Model {
+    Markov(MarkovModel),
+    Trie(DynSdt),
+}
+
+impl Model {
+    fn predict(&self, path: &str, top_n: usize) -> Vec<(String, f64)> {
+        match self {
+            Model::Markov(m) => m.predict(path, top_n),
+            Model::Trie(t) => t.predict(path, top_n),
+        }
+    }
+
+    fn learn(&mut self, path: &str) {
+        match self {
+            Model::Markov(m) => m.learn(path),
+            Model::Trie(t) => t.learn(path),
+        }
+    }
+
+    /// Merge a previously persisted model of the matching kind (ignored silently
+    /// on a format mismatch, e.g. a Markov file loaded into a trie campaign).
+    fn load_merge(&mut self, text: &str) {
+        match self {
+            Model::Markov(m) => {
+                if let Ok(learned) = MarkovModel::from_json(text) {
+                    m.merge(&learned);
+                }
+            }
+            Model::Trie(t) => {
+                if let Ok(learned) = DynSdt::from_json(text) {
+                    t.merge(&learned);
+                }
+            }
+        }
+    }
+
+    fn save_json(&self) -> anyhow::Result<String> {
+        match self {
+            Model::Markov(m) => m.to_json(),
+            Model::Trie(t) => t.to_json(),
+        }
+    }
 }
 
 pub struct Campaign {
@@ -149,25 +200,21 @@ impl Campaign {
         // learns the target's real structure purely from scan results; otherwise
         // it is seeded from the detected profile. Either way, any previously
         // learned model at `model_path` is merged in.
-        let mut markov = if list_mode {
-            MarkovModel::new(
-                self.markov_max_order(),
-                self.cfg.laplace_alpha,
-                self.cfg.probability_threshold,
-            )
+        let mut model = if list_mode {
+            // DynSDT: starts empty, learns the target's real directory tree from
+            // scan hits, and serves top-k autocomplete for the next round.
+            Model::Trie(DynSdt::new())
         } else {
-            MarkovModel::seeded(
+            Model::Markov(MarkovModel::seeded(
                 &profile,
                 self.markov_max_order(),
                 self.cfg.laplace_alpha,
                 self.cfg.probability_threshold,
-            )
+            ))
         };
         if !self.cfg.model_path.is_empty() {
             if let Ok(text) = std::fs::read_to_string(&self.cfg.model_path) {
-                if let Ok(learned) = MarkovModel::from_json(&text) {
-                    markov.merge(&learned);
-                }
+                model.load_merge(&text);
             }
         }
 
@@ -233,7 +280,7 @@ impl Campaign {
             }
             summary.discovered.push((r.url.clone(), r.status));
             bm25.add_document(&last_segment(&r.url));
-            markov.learn(&r.url);
+            model.learn(&r.url);
             if r.is_directory() && r.depth() < self.cfg.max_depth {
                 let a = ensure_trailing_slash(&r.url);
                 sched.add_arm(&a);
@@ -271,7 +318,7 @@ impl Campaign {
             };
 
             // predict → rank → wordlist
-            let mut preds = markov.predict(&arm, self.cfg.top_n * 2);
+            let mut preds = model.predict(&arm, self.cfg.top_n * 2);
             if self.cfg.ranker == "bm25" {
                 preds = bm25.rerank(&preds);
             }
@@ -348,7 +395,7 @@ impl Campaign {
                 summary.discovered.push((r.url.clone(), r.status));
 
                 // online learning
-                markov.learn(&r.url);
+                model.learn(&r.url);
                 bm25.add_document(&last_segment(&r.url));
 
                 // enqueue newly found directories within depth
@@ -368,7 +415,7 @@ impl Campaign {
 
         // persist what this run learned so the next scan starts smarter
         if !self.cfg.model_path.is_empty() {
-            if let Ok(js) = markov.to_json() {
+            if let Ok(js) = model.save_json() {
                 if let Some(parent) = std::path::Path::new(&self.cfg.model_path).parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
