@@ -185,6 +185,10 @@ impl Campaign {
             None
         };
         let mut tried_words: HashSet<String> = HashSet::new();
+        // every arm ever enqueued (root + discovered dirs), for the list-drain
+        // phase that re-serves them round-robin once the bandit retires its arms.
+        let mut known_arms: Vec<String> = Vec::new();
+        let mut list_rr: usize = 0;
 
         // optional base wordlist for hybrid coverage (default off -> pure ML)
         let seed_words: Vec<String> = if self.cfg.seed_per_round > 0
@@ -231,19 +235,39 @@ impl Campaign {
             bm25.add_document(&last_segment(&r.url));
             markov.learn(&r.url);
             if r.is_directory() && r.depth() < self.cfg.max_depth {
-                sched.add_arm(&ensure_trailing_slash(&r.url));
+                let a = ensure_trailing_slash(&r.url);
+                sched.add_arm(&a);
+                if !known_arms.contains(&a) {
+                    known_arms.push(a);
+                }
             }
         }
 
         // the root target is always the first directory to expand
-        sched.add_arm(&ensure_trailing_slash(target));
+        let root_arm = ensure_trailing_slash(target);
+        sched.add_arm(&root_arm);
+        known_arms.push(root_arm);
 
         // ---- Phase 3: adaptive rounds ----
         while summary.rounds < self.cfg.max_rounds
             && summary.requests_used < self.cfg.request_budget
         {
-            let Some(arm) = sched.choose() else {
-                break;
+            let arm = match sched.choose() {
+                Some(a) => a,
+                None => {
+                    // list-drain: once the bandit retires its arms, keep re-serving
+                    // known arms round-robin while the list cursor still has entries,
+                    // so the whole pool drains across rounds (bounded by max_rounds /
+                    // request_budget) instead of stopping after the first chunk.
+                    let cursor_has_more = cursor.as_ref().map_or(false, |c| !c.is_exhausted());
+                    if list_mode && cursor_has_more && !known_arms.is_empty() {
+                        let a = known_arms[list_rr % known_arms.len()].clone();
+                        list_rr += 1;
+                        a
+                    } else {
+                        break;
+                    }
+                }
             };
 
             // predict → rank → wordlist
@@ -330,7 +354,11 @@ impl Campaign {
                 // enqueue newly found directories within depth
                 // (the scheduler de-dups arms, so no seen-guard needed here)
                 if r.is_directory() && r.depth() < self.cfg.max_depth {
-                    sched.add_arm(&ensure_trailing_slash(&r.url));
+                    let a = ensure_trailing_slash(&r.url);
+                    sched.add_arm(&a);
+                    if !known_arms.contains(&a) {
+                        known_arms.push(a);
+                    }
                 }
             }
 

@@ -71,3 +71,20 @@ operator tuning the knob (orchestrator-only change; the scheduler stays untouche
 
 `cargo test --workspace`: **657 passed, 0 failed, 28 suites** (incl. the 3 new
 list-driver tests). `cargo build` workspace: clean.
+
+## Follow-up implemented: arm re-serve (list-drain)
+
+The orchestrator now, in list mode only, re-serves known arms round-robin once the
+bandit retires its arms, as long as the list cursor still has entries — so the pool
+drains across rounds at the **default** chunk without tuning the knob (bounded by
+max_rounds / request_budget; scheduler untouched).
+
+Before vs after on DVWA with the default `--ml-list-chunk 200`:
+
+| | rounds | requests | found | soft404 |
+|---|---:|---:|---:|---:|
+| before (stopped after 1 chunk) | 1 | 200 | 5 | 196 |
+| after (drains across rounds) | 25 | 5110 | 9 | 4987 |
+
+Verified by a new unit test (`list_driven_drains_whole_pool_across_rounds`): a flat
+target with no discovered directories now consumes the entire pool across rounds.

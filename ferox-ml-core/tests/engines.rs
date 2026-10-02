@@ -639,3 +639,48 @@ fn list_driven_campaign_scans_lists_and_predicts_first() {
     drop(calls);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn list_driven_drains_whole_pool_across_rounds() {
+    // flat target: the root returns no directories, so without arm re-serve the
+    // loop would stop after one chunk. With re-serve it drains the whole pool.
+    let dir = std::env::temp_dir().join(format!("ferox-drain-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    std::fs::write(dir.join("a.txt"), "admin\nlogin\napi\n").unwrap();
+    std::fs::write(dir.join("b.txt"), "users\nsecret\nbackup\n").unwrap();
+    let pool: HashSet<&str> =
+        ["admin", "login", "api", "users", "secret", "backup"].into_iter().collect();
+
+    let calls: CallLog = Rc::new(RefCell::new(Vec::new()));
+    let runner = RecordingRunner {
+        calls: Rc::clone(&calls),
+        by_url: HashMap::new(), // root returns nothing -> no discovered dirs
+    };
+    let cfg = Config {
+        list_dir: dir.to_string_lossy().into_owned(),
+        list_chunk_size: 2, // 6-word pool / 2 = 3 rounds
+        ranker: "none".into(),
+        max_rounds: 50,
+        request_budget: 1000,
+        ..Config::default()
+    };
+
+    let summary = Campaign::new(cfg, Box::new(runner)).run("http://t.test").unwrap();
+    let calls = calls.borrow();
+
+    // 3 scan rounds (after the probe), re-serving the root each time
+    assert_eq!(summary.rounds, 3, "should drain pool across 3 rounds");
+    // every pool word was scanned exactly once across the scan calls (calls[0]=probe)
+    let scanned: HashSet<String> = calls
+        .iter()
+        .skip(1)
+        .flat_map(|(_, words)| words.iter().cloned())
+        .collect();
+    for w in &pool {
+        assert!(scanned.contains(*w), "pool word {w} was never scanned");
+    }
+    assert_eq!(summary.profile, "LIST_DRIVEN");
+
+    drop(calls);
+    let _ = std::fs::remove_dir_all(&dir);
+}
