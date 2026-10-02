@@ -58,6 +58,73 @@ pub fn load_wordlist(path: &str, cap: usize) -> std::io::Result<Vec<String>> {
         .collect())
 }
 
+/// Load every file in `dir` (sorted by path for determinism) and merge them into
+/// one de-duplicated, order-preserving pool. Lines are trimmed; empty lines and
+/// `#` comments are skipped. `cap` bounds the total number of entries. Files that
+/// can't be read (e.g. binary) are skipped rather than aborting the whole load.
+pub fn load_list_dir(dir: &str, cap: usize) -> std::io::Result<Vec<String>> {
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(dir)?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.is_file())
+        .collect();
+    files.sort(); // determinism: filename order, not read_dir order
+    let mut pool: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for f in files {
+        let Ok(text) = std::fs::read_to_string(&f) else {
+            continue; // skip unreadable/binary files
+        };
+        for line in text.lines() {
+            let w = line.trim();
+            if w.is_empty() || w.starts_with('#') {
+                continue;
+            }
+            if seen.insert(w.to_string()) {
+                pool.push(w.to_string());
+                if pool.len() >= cap {
+                    return Ok(pool);
+                }
+            }
+        }
+    }
+    Ok(pool)
+}
+
+/// A forward cursor over a merged list pool. Each `next_chunk` returns the next
+/// run of entries not already tried, in pool order, advancing past everything it
+/// scans. It **stops** at the end of the pool (no wrap-around): once exhausted it
+/// returns an empty chunk.
+pub struct ListCursor {
+    pool: Vec<String>,
+    pos: usize,
+}
+
+impl ListCursor {
+    pub fn new(pool: Vec<String>) -> Self {
+        Self { pool, pos: 0 }
+    }
+
+    /// Up to `n` entries from the pool not present in `tried`, in pool order.
+    /// Advances the cursor past every entry it inspects (tried or not), so a given
+    /// pool position is served at most once across the campaign.
+    pub fn next_chunk(&mut self, tried: &HashSet<String>, n: usize) -> Vec<String> {
+        let mut out = Vec::with_capacity(n.min(16));
+        while self.pos < self.pool.len() && out.len() < n {
+            let w = &self.pool[self.pos];
+            self.pos += 1;
+            if !tried.contains(w) {
+                out.push(w.clone());
+            }
+        }
+        out
+    }
+
+    /// Whether the cursor has consumed the whole pool.
+    pub fn is_exhausted(&self) -> bool {
+        self.pos >= self.pool.len()
+    }
+}
+
 /// Tracks every URL already discovered/scheduled so nothing is scanned twice.
 #[derive(Default)]
 pub struct SeenPaths {
@@ -120,6 +187,40 @@ mod tests {
         ];
         let merged = merge_seed(&primary, &seed, 2);
         assert_eq!(merged, ["api", "v1", "admin", "login"]);
+    }
+
+    #[test]
+    fn load_list_dir_merges_sorted_dedups_and_caps() {
+        let dir = std::env::temp_dir().join(format!("ferox-lists-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        // b.txt sorts after a.txt; "api" appears in both (dedup); comments/empties skipped
+        std::fs::write(dir.join("a.txt"), "admin\n# comment\nlogin\n\napi\n").unwrap();
+        std::fs::write(dir.join("b.txt"), "api\nusers\n").unwrap();
+        let pool = load_list_dir(dir.to_str().unwrap(), 100).unwrap();
+        assert_eq!(pool, ["admin", "login", "api", "users"]); // a.txt first, deduped
+        // cap bounds the total
+        let capped = load_list_dir(dir.to_str().unwrap(), 2).unwrap();
+        assert_eq!(capped, ["admin", "login"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn list_cursor_serves_unseen_in_order_then_stops() {
+        let mut cur = ListCursor::new(vec![
+            "a".into(), "b".into(), "c".into(), "d".into(), "e".into(),
+        ]);
+        let mut tried: HashSet<String> = HashSet::new();
+        tried.insert("b".into()); // already scheduled -> skipped, but still scanned past
+
+        let first = cur.next_chunk(&tried, 2); // scans a(ok), b(skip), c(ok)
+        assert_eq!(first, ["a", "c"]);
+        for w in &first {
+            tried.insert(w.clone());
+        }
+        let second = cur.next_chunk(&tried, 10); // d, e
+        assert_eq!(second, ["d", "e"]);
+        assert!(cur.is_exhausted());
+        assert!(cur.next_chunk(&tried, 5).is_empty()); // no wrap-around
     }
 
     #[test]

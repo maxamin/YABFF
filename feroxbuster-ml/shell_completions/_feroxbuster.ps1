@@ -87,6 +87,8 @@ Register-ArgumentCompleter -Native -CommandName 'feroxbuster' -ScriptBlock {
             [CompletionResult]::new('--ml-order', '--ml-order', [CompletionResultType]::ParameterName, 'Maximum Markov order for the ML predictor (default: 3)')
             [CompletionResult]::new('--ml-predictions', '--ml-predictions', [CompletionResultType]::ParameterName, 'Number of ML-predicted paths injected per directory (default: 25)')
             [CompletionResult]::new('--ml-scheduler', '--ml-scheduler', [CompletionResultType]::ParameterName, 'Bandit that scales per-directory prediction budget (default: thompson)')
+            [CompletionResult]::new('--ml-list-dir', '--ml-list-dir', [CompletionResultType]::ParameterName, 'Directory of wordlists to drive --ml-loop (skips fingerprinting; learns structure from results). Supersedes -w')
+            [CompletionResult]::new('--ml-list-chunk', '--ml-list-chunk', [CompletionResultType]::ParameterName, 'List entries to inject per round when --ml-list-dir is set (default: 200)')
             [CompletionResult]::new('-o', '-o', [CompletionResultType]::ParameterName, 'Output file to write results to (use w/ --json for JSON entries)')
             [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'Output file to write results to (use w/ --json for JSON entries)')
             [CompletionResult]::new('--debug-log', '--debug-log', [CompletionResultType]::ParameterName, 'Output file to write log entries (use w/ --json for JSON entries)')

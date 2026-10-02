@@ -691,6 +691,21 @@ pub fn initialize() -> Command {
                 .num_args(0)
                 .help_heading("Scan settings")
                 .help("Run the adaptive bounded-scan feedback loop (budgeted Thompson-scheduled orchestrator) instead of a single scan")
+        ).arg(
+            Arg::new("ml_list_dir")
+                .long("ml-list-dir")
+                .value_hint(ValueHint::DirPath)
+                .value_name("DIR")
+                .num_args(1)
+                .help_heading("Scan settings")
+                .help("Directory of wordlists to drive --ml-loop (skips fingerprinting; learns structure from results). Supersedes -w")
+        ).arg(
+            Arg::new("ml_list_chunk")
+                .long("ml-list-chunk")
+                .value_name("COUNT")
+                .num_args(1)
+                .help_heading("Scan settings")
+                .help("List entries to inject per round when --ml-list-dir is set (default: 200)")
         );
 
     /////////////////////////////////////////////////////////////////////

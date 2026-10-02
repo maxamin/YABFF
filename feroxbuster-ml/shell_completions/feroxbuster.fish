@@ -43,6 +43,8 @@ complete -c feroxbuster -l ml-predictions -d 'Number of ML-predicted paths injec
 complete -c feroxbuster -l ml-scheduler -d 'Bandit that scales per-directory prediction budget (default: thompson)' -r -f -a "thompson\t''
 ucb1\t''
 round_robin\t''"
+complete -c feroxbuster -l ml-list-dir -d 'Directory of wordlists to drive --ml-loop (skips fingerprinting; learns structure from results). Supersedes -w' -r -f -a "(__fish_complete_directories)"
+complete -c feroxbuster -l ml-list-chunk -d 'List entries to inject per round when --ml-list-dir is set (default: 200)' -r
 complete -c feroxbuster -s o -l output -d 'Output file to write results to (use w/ --json for JSON entries)' -r -F
 complete -c feroxbuster -l debug-log -d 'Output file to write log entries (use w/ --json for JSON entries)' -r -F
 complete -c feroxbuster -l limit-bars -d 'Number of directory scan bars to show at any given time (default: no limit)' -r

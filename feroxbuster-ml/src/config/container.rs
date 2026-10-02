@@ -1,7 +1,7 @@
 use super::utils::{
     backup_extensions, depth, deserialize_wordlist, determine_requester_policy, extract_links,
-    ignored_extensions, methods, ml_fp_margin, ml_order, ml_predictions, ml_rank, ml_scheduler,
-    ml_soft404, parse_request_file, report_and_exit, request_protocol, response_size_limit,
+    ignored_extensions, methods, ml_fp_margin, ml_list_chunk, ml_order, ml_predictions, ml_rank,
+    ml_scheduler, ml_soft404, parse_request_file, report_and_exit, request_protocol, response_size_limit,
     save_state, serialized_type, split_header, split_query, status_codes, threads, timeout,
     user_agent, wordlist, OutputLevel, RequesterPolicy,
 };
@@ -361,6 +361,14 @@ pub struct Configuration {
     #[serde(default)]
     pub ml_loop: bool,
 
+    /// directory of wordlists to drive --ml-loop (skips fingerprinting)
+    #[serde(default)]
+    pub ml_list_dir: String,
+
+    /// list entries injected per round when ml_list_dir is set (default: 200)
+    #[serde(default = "ml_list_chunk")]
+    pub ml_list_chunk: usize,
+
     /// path to a learned ML model, loaded at start and updated as paths are found
     #[serde(default)]
     pub ml_model: String,
@@ -459,6 +467,8 @@ impl Default for Configuration {
             scan_dir_listings: false,
             ml: false,
             ml_loop: false,
+            ml_list_dir: String::new(),
+            ml_list_chunk: ml_list_chunk(),
             ml_model: String::new(),
             ml_order: ml_order(),
             ml_predictions: ml_predictions(),
@@ -1046,6 +1056,13 @@ impl Configuration {
         if came_from_cli!(args, "ml_loop") {
             config.ml_loop = true;
         }
+        update_config_if_present!(&mut config.ml_list_dir, args, "ml_list_dir", String);
+        update_config_with_num_type_if_present!(
+            &mut config.ml_list_chunk,
+            args,
+            "ml_list_chunk",
+            usize
+        );
         update_config_if_present!(&mut config.ml_model, args, "ml_model", String);
         if !config.ml_model.is_empty() {
             config.ml = true; // --ml-model implies --ml
@@ -1465,6 +1482,8 @@ impl Configuration {
         update_if_not_default!(&mut conf.scan_dir_listings, new.scan_dir_listings, false);
         update_if_not_default!(&mut conf.ml, new.ml, false);
         update_if_not_default!(&mut conf.ml_loop, new.ml_loop, false);
+        update_if_not_default!(&mut conf.ml_list_dir, new.ml_list_dir, String::new());
+        update_if_not_default!(&mut conf.ml_list_chunk, new.ml_list_chunk, ml_list_chunk());
         update_if_not_default!(&mut conf.ml_model, new.ml_model, String::new());
         update_if_not_default!(&mut conf.ml_order, new.ml_order, ml_order());
         update_if_not_default!(&mut conf.ml_predictions, new.ml_predictions, ml_predictions());

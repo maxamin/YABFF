@@ -8,7 +8,7 @@ use ferox_ml_core::fingerprint::{
     has_strong_discriminator, is_catch_all, kmeans_fit, learn_soft_404, present_fraction,
     softmax_confidence, NearestCentroid, ProfileTracker,
 };
-use ferox_ml_core::interfaces::{Classifier, Predictor, Scheduler};
+use ferox_ml_core::interfaces::{Classifier, Predictor};
 use ferox_ml_core::markov::MarkovModel;
 use ferox_ml_core::profiles::{centroids, seed_matrix, FEATURE_WEIGHTS, N_FEATURES, PROBE_PATHS};
 use ferox_ml_core::ranking::Bm25;
@@ -529,4 +529,113 @@ fn profile_tables_are_well_formed() {
         assert!(!seed_matrix(p).is_empty(), "{p} must ship a seed matrix");
     }
     assert!(seed_matrix("NOPE").is_empty(), "unknown profile -> no seed");
+}
+
+// ---------- list-driven driver (directory-of-wordlists mode) ----------
+
+use ferox_ml_core::config::Config;
+use ferox_ml_core::ferox::{FeroxArgs, FeroxResponse, FeroxRunner};
+use ferox_ml_core::orchestrator::Campaign;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
+
+type CallLog = Rc<RefCell<Vec<(String, Vec<String>)>>>;
+
+/// A fake runner that records every (url, words) call into a shared log and
+/// replays canned responses keyed by the scanned URL.
+struct RecordingRunner {
+    calls: CallLog,
+    by_url: HashMap<String, Vec<FeroxResponse>>,
+}
+
+impl FeroxRunner for RecordingRunner {
+    fn run(&self, args: &FeroxArgs) -> anyhow::Result<Vec<FeroxResponse>> {
+        self.calls
+            .borrow_mut()
+            .push((args.url.clone(), args.words.clone()));
+        Ok(self.by_url.get(&args.url).cloned().unwrap_or_default())
+    }
+}
+
+fn resp(url: &str, status: u16) -> FeroxResponse {
+    FeroxResponse {
+        url: url.to_string(),
+        status,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn list_driven_campaign_scans_lists_and_predicts_first() {
+    // list dir: pool (sorted a.txt then b.txt) = admin, login, api, users, secret, backup
+    let dir = std::env::temp_dir().join(format!("ferox-listrun-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    std::fs::write(dir.join("a.txt"), "admin\nlogin\napi\n").unwrap();
+    std::fs::write(dir.join("b.txt"), "users\nsecret\nbackup\n").unwrap();
+    let pool: HashSet<&str> = ["admin", "login", "api", "users", "secret", "backup"].into_iter().collect();
+
+    // scanning the root finds /api/ (a directory) and /api/v1 -> markov learns the
+    // api -> v1 transition, so the next round can predict "v1".
+    let mut by_url = HashMap::new();
+    by_url.insert(
+        "http://t.test/".to_string(),
+        vec![resp("http://t.test/api/", 200), resp("http://t.test/api/v1", 200)],
+    );
+    let calls: CallLog = Rc::new(RefCell::new(Vec::new()));
+    let runner = RecordingRunner {
+        calls: Rc::clone(&calls),
+        by_url,
+    };
+
+    let cfg = Config {
+        list_dir: dir.to_string_lossy().into_owned(),
+        list_chunk_size: 2,
+        ranker: "none".into(), // keep list order deterministic (no bm25 reorder)
+        max_rounds: 10,
+        request_budget: 1000,
+        max_depth: 5,
+        top_n: 10,
+        ..Config::default()
+    };
+
+    let summary = Campaign::new(cfg, Box::new(runner)).run("http://t.test").unwrap();
+    let calls = calls.borrow();
+
+    // (d) profile is LIST_DRIVEN; the nested hit was discovered
+    assert_eq!(summary.profile, "LIST_DRIVEN");
+    assert!(summary.discovered.iter().any(|(u, _)| u.contains("/api/v1")));
+
+    // (a) PROBE_PATHS are never scanned: the only probe (round 0) is the 3 random
+    // feroxml-probe paths, and no call ever includes a PROBE_PATHS-only marker.
+    let (probe_url, probe_words) = &calls[0];
+    assert_eq!(probe_url, "http://t.test");
+    assert_eq!(probe_words.len(), 3);
+    assert!(probe_words.iter().all(|w| w.starts_with("feroxml-probe")));
+    let probe_markers = ["wp-json", "actuator", "swagger-ui.html", "xmlrpc.php"];
+    for (_, words) in calls.iter() {
+        for m in probe_markers {
+            assert!(!words.contains(&m.to_string()), "{m} (a PROBE_PATH) was scanned");
+            assert!(PROBE_PATHS.contains(&m)); // sanity: these really are probe paths
+        }
+    }
+
+    // (b) round 1 (first real scan, the root arm) is driven by the list
+    let (root_url, round1) = &calls[1];
+    assert_eq!(root_url, "http://t.test/");
+    assert!(!round1.is_empty());
+    assert!(round1.iter().all(|w| pool.contains(w.as_str())), "round1={round1:?}");
+
+    // (c) after the /api hit, the next round's ML prediction ("v1") comes BEFORE
+    // any list entry in the wordlist handed to the runner.
+    let (arm2, round2) = &calls[2];
+    assert_eq!(arm2, "http://t.test/api/");
+    assert_eq!(round2[0], "v1", "ML prediction should lead: {round2:?}");
+    let first_list = round2.iter().position(|w| pool.contains(w.as_str()));
+    if let Some(pos) = first_list {
+        assert!(pos > 0, "a list entry preceded the ML prediction: {round2:?}");
+    }
+
+    drop(calls);
+    let _ = std::fs::remove_dir_all(&dir);
 }

@@ -34,7 +34,10 @@ use crate::rng::Rng;
 use crate::scheduler;
 use crate::scope::Scope;
 use crate::tokenize::{last_segment, path_segments};
-use crate::wordlist::{build_round_wordlist, load_wordlist, merge_seed, SeenPaths};
+use crate::wordlist::{
+    build_round_wordlist, load_list_dir, load_wordlist, merge_seed, ListCursor, SeenPaths,
+};
+use std::collections::HashSet;
 
 /// Everything the caller learns from a campaign.
 #[derive(Debug, Clone)]
@@ -82,11 +85,22 @@ impl Campaign {
     pub fn run(&mut self, target: &str) -> anyhow::Result<Summary> {
         let scope = Scope::new(target, &self.cfg.scope)?;
 
-        // ---- Phase 1: probe + fingerprint ----
-        let mut probe_words: Vec<String> =
-            PROBE_PATHS.iter().map(|s| s.to_string()).collect();
+        // List mode gates every new behavior: when `list_dir` is set the
+        // fingerprint/seed phase is skipped and scanning is driven by the lists.
+        let list_mode = !self.cfg.list_dir.is_empty();
+
+        // ---- Phase 1: probe ----
+        // The 3 random probes always run so the soft-404 signature is learned
+        // before any real scanning. In list mode that's ALL we probe (no
+        // PROBE_PATHS, no fingerprinting); otherwise we also probe PROBE_PATHS.
         let random_paths = self.random_probe_paths(3);
-        probe_words.extend(random_paths.iter().cloned());
+        let probe_words: Vec<String> = if list_mode {
+            random_paths.clone()
+        } else {
+            let mut pw: Vec<String> = PROBE_PATHS.iter().map(|s| s.to_string()).collect();
+            pw.extend(random_paths.iter().cloned());
+            pw
+        };
 
         let probe_resps = self.runner.run(&FeroxArgs {
             url: target.to_string(),
@@ -96,27 +110,7 @@ impl Campaign {
             extract_links: false,
         })?;
 
-        // E2: learn the soft-404 signature from the random probes, then demote any
-        // discriminating probe that returns the same soft-404 body to "absent", so
-        // per-path presence reflects real content, not a catch-all's uniform body.
-        let (random_views, mut probe_views): (Vec<_>, Vec<_>) = to_probe_views(&probe_resps)
-            .into_iter()
-            .partition(|v| random_paths.iter().any(|r| v.url.contains(r.as_str())));
-        let soft404 = fingerprint::learn_soft_404(&random_views);
-        fingerprint::apply_soft_404(&mut probe_views, &soft404);
-
-        let features = feature_vector(&probe_views);
-        let classifier: Box<dyn Classifier> =
-            fingerprint::build(&self.cfg.classifier, self.cfg.seed);
-        let (mut profile, distances) = classifier.classify(&features);
-        // E1 catch-all / soft-404 guard: a server that answers nearly every probe
-        // with no strong discriminator defeats path-presence fingerprinting, so
-        // abstain to the generic profile rather than seed a confident-but-wrong one.
-        if fingerprint::is_catch_all(&probe_views) {
-            profile = "LEGACY_STATIC".to_string();
-        }
-
-        // ---- learn soft-404 signatures from the random probes ----
+        // ---- runtime soft-404 filter (both modes), learned from the random probes ----
         let mut filter = SoftNotFoundFilter::new();
         if self.cfg.use_soft404_filter {
             for r in &probe_resps {
@@ -126,15 +120,49 @@ impl Campaign {
             }
         }
 
-        // ---- Phase 2: seed the predictor for the detected profile, then merge
-        // any model previously learned (from the labs or earlier runs) so the
-        // engine starts from accumulated knowledge, not just the hand seeds.
-        let mut markov = MarkovModel::seeded(
-            &profile,
-            self.markov_max_order(),
-            self.cfg.laplace_alpha,
-            self.cfg.probability_threshold,
-        );
+        // ---- fingerprint (skipped entirely in list mode) ----
+        let (profile, distances) = if list_mode {
+            ("LIST_DRIVEN".to_string(), Vec::new())
+        } else {
+            // E2: learn the soft-404 signature from the random probes, then demote
+            // any discriminating probe that returns the same soft-404 body to
+            // "absent", so per-path presence reflects real content.
+            let (random_views, mut probe_views): (Vec<_>, Vec<_>) = to_probe_views(&probe_resps)
+                .into_iter()
+                .partition(|v| random_paths.iter().any(|r| v.url.contains(r.as_str())));
+            let soft404 = fingerprint::learn_soft_404(&random_views);
+            fingerprint::apply_soft_404(&mut probe_views, &soft404);
+
+            let features = feature_vector(&probe_views);
+            let classifier: Box<dyn Classifier> =
+                fingerprint::build(&self.cfg.classifier, self.cfg.seed);
+            let (mut p, d) = classifier.classify(&features);
+            // E1 catch-all guard: a server that answers nearly every probe with no
+            // strong discriminator defeats path-presence fingerprinting.
+            if fingerprint::is_catch_all(&probe_views) {
+                p = "LEGACY_STATIC".to_string();
+            }
+            (p, d)
+        };
+
+        // ---- Phase 2: the predictor model. In list mode it starts EMPTY and
+        // learns the target's real structure purely from scan results; otherwise
+        // it is seeded from the detected profile. Either way, any previously
+        // learned model at `model_path` is merged in.
+        let mut markov = if list_mode {
+            MarkovModel::new(
+                self.markov_max_order(),
+                self.cfg.laplace_alpha,
+                self.cfg.probability_threshold,
+            )
+        } else {
+            MarkovModel::seeded(
+                &profile,
+                self.markov_max_order(),
+                self.cfg.laplace_alpha,
+                self.cfg.probability_threshold,
+            )
+        };
         if !self.cfg.model_path.is_empty() {
             if let Ok(text) = std::fs::read_to_string(&self.cfg.model_path) {
                 if let Ok(learned) = MarkovModel::from_json(&text) {
@@ -146,6 +174,17 @@ impl Campaign {
         let mut bm25 = Bm25::new();
         let mut sched = scheduler::build(&self.cfg.scheduler, self.cfg.seed);
         let mut seen = SeenPaths::new();
+
+        // list-driven scanning: a forward cursor over the merged wordlist pool, and
+        // a campaign-level set of every word already scheduled (from any source).
+        let mut cursor = if list_mode {
+            Some(ListCursor::new(
+                load_list_dir(&self.cfg.list_dir, 100_000).unwrap_or_default(),
+            ))
+        } else {
+            None
+        };
+        let mut tried_words: HashSet<String> = HashSet::new();
 
         // optional base wordlist for hybrid coverage (default off -> pure ML)
         let seed_words: Vec<String> = if self.cfg.seed_per_round > 0
@@ -216,6 +255,32 @@ impl Campaign {
             if !seed_words.is_empty() {
                 words = merge_seed(&words, &seed_words, self.cfg.seed_per_round);
             }
+
+            // list fill: ML predictions first, then the next unseen list chunk,
+            // BM25-ranked against the observed corpus, bounded by remaining budget.
+            if let Some(cur) = cursor.as_mut() {
+                for w in &words {
+                    tried_words.insert(w.clone());
+                }
+                let remaining = self.cfg.request_budget.saturating_sub(summary.requests_used);
+                let room = remaining.saturating_sub(words.len());
+                if room > 0 {
+                    let chunk = cur.next_chunk(&tried_words, self.cfg.list_chunk_size);
+                    let ranked: Vec<String> = if self.cfg.ranker == "bm25" {
+                        let pairs: Vec<(String, f64)> =
+                            chunk.iter().map(|w| (w.clone(), 1.0)).collect();
+                        bm25.rerank(&pairs).into_iter().map(|(w, _)| w).collect()
+                    } else {
+                        chunk
+                    };
+                    for w in ranked.into_iter().take(room) {
+                        if tried_words.insert(w.clone()) {
+                            words.push(w);
+                        }
+                    }
+                }
+            }
+
             if words.is_empty() {
                 continue;
             }
@@ -315,6 +380,16 @@ impl Campaign {
             Vec::new()
         };
 
+        // list mode: harvest is driven by the user's wordlist directory (no
+        // fingerprinting, no profile reporting).
+        let list_mode = !self.cfg.list_dir.is_empty();
+        let list_pool: Vec<String> = if list_mode {
+            load_list_dir(&self.cfg.list_dir, 100_000).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        const HARVEST_CHUNK: usize = 5_000; // bound per-scan wordlist size
+
         let mut summary = LearnSummary::default();
         let total = targets.len();
 
@@ -324,51 +399,79 @@ impl Campaign {
                 Err(_) => continue,
             };
 
-            // fingerprint (for reporting which profiles the labs covered)
-            let probe_words: Vec<String> =
-                PROBE_PATHS.iter().map(|s| s.to_string()).collect();
-            if let Ok(probe) = self.runner.run(&FeroxArgs {
-                url: target.clone(),
-                words: probe_words,
-                no_recursion: true,
-                all_codes: true,
-                extract_links: false,
-            }) {
-                let (profile, _) = fingerprint::build(&self.cfg.classifier, self.cfg.seed)
-                    .classify(&feature_vector(&to_probe_views(&probe)));
-                *summary.profiles.entry(profile).or_insert(0) += 1;
-                for r in &probe {
-                    if is_hit(r, &self.cfg) && scope.allows(&r.url) {
-                        model.learn(&r.url);
+            let mut learned_here = 0usize;
+
+            if list_mode {
+                // one harvest scan per list chunk; no fingerprinting
+                *summary
+                    .profiles
+                    .entry("LIST_DRIVEN".to_string())
+                    .or_insert(0) += 1;
+                for chunk in list_pool.chunks(HARVEST_CHUNK) {
+                    let resps = self
+                        .runner
+                        .run(&FeroxArgs {
+                            url: target.clone(),
+                            words: chunk.to_vec(),
+                            no_recursion: false,
+                            all_codes: false,
+                            extract_links: true,
+                        })
+                        .unwrap_or_default();
+                    for r in &resps {
+                        if is_hit(r, &self.cfg) && scope.allows(&r.url) {
+                            model.learn(&r.url);
+                            learned_here += 1;
+                        }
                     }
                 }
-            }
-
-            // harvest: extraction ON + base wordlist + recursion, for MAX paths
-            let words = if seed_words.is_empty() {
-                PROBE_PATHS.iter().map(|s| s.to_string()).collect()
             } else {
-                seed_words.clone()
-            };
-            let resps = self
-                .runner
-                .run(&FeroxArgs {
+                // fingerprint (for reporting which profiles the labs covered)
+                let probe_words: Vec<String> =
+                    PROBE_PATHS.iter().map(|s| s.to_string()).collect();
+                if let Ok(probe) = self.runner.run(&FeroxArgs {
                     url: target.clone(),
-                    words,
-                    no_recursion: false, // let the crawler/recursion find structure
-                    all_codes: false,
-                    extract_links: true, // harvest maximum structure while learning
-                })
-                .unwrap_or_default();
-
-            let mut learned_here = 0usize;
-            for r in &resps {
-                if !is_hit(r, &self.cfg) || !scope.allows(&r.url) {
-                    continue;
+                    words: probe_words,
+                    no_recursion: true,
+                    all_codes: true,
+                    extract_links: false,
+                }) {
+                    let (profile, _) = fingerprint::build(&self.cfg.classifier, self.cfg.seed)
+                        .classify(&feature_vector(&to_probe_views(&probe)));
+                    *summary.profiles.entry(profile).or_insert(0) += 1;
+                    for r in &probe {
+                        if is_hit(r, &self.cfg) && scope.allows(&r.url) {
+                            model.learn(&r.url);
+                        }
+                    }
                 }
-                model.learn(&r.url);
-                learned_here += 1;
+
+                // harvest: extraction ON + base wordlist + recursion, for MAX paths
+                let words = if seed_words.is_empty() {
+                    PROBE_PATHS.iter().map(|s| s.to_string()).collect()
+                } else {
+                    seed_words.clone()
+                };
+                let resps = self
+                    .runner
+                    .run(&FeroxArgs {
+                        url: target.clone(),
+                        words,
+                        no_recursion: false, // let the crawler/recursion find structure
+                        all_codes: false,
+                        extract_links: true, // harvest maximum structure while learning
+                    })
+                    .unwrap_or_default();
+
+                for r in &resps {
+                    if !is_hit(r, &self.cfg) || !scope.allows(&r.url) {
+                        continue;
+                    }
+                    model.learn(&r.url);
+                    learned_here += 1;
+                }
             }
+
             summary.targets_learned += 1;
             summary.paths_ingested += learned_here;
 

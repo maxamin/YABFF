@@ -883,9 +883,18 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
         model_path: config.ml_model.clone(),
         extensions: config.extensions.clone(),
         state_dir: std::env::temp_dir().to_string_lossy().into_owned(),
+        list_dir: config.ml_list_dir.clone(),
+        list_chunk_size: config.ml_list_chunk,
         ..MlConfig::default()
     };
-    if let Some(wl) = config.wordlist.first() {
+    if !cfg.list_dir.is_empty() {
+        // list mode is driven entirely by --ml-list-dir; -w is not used for seeding
+        if !config.wordlist.is_empty() {
+            log::warn!(
+                "ml-loop: --ml-list-dir is set; -w/--wordlist is superseded and ignored"
+            );
+        }
+    } else if let Some(wl) = config.wordlist.first() {
         cfg.seed_wordlist = wl.clone();
         cfg.seed_per_round = 10;
     }

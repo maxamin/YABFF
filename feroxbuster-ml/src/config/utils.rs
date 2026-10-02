@@ -189,6 +189,11 @@ pub(super) fn ml_fp_margin() -> f64 {
     0.10
 }
 
+/// default number of wordlist entries injected per round in --ml-list-dir mode
+pub(super) fn ml_list_chunk() -> usize {
+    200
+}
+
 /// default max response size to read (4MB to prevent OOM issues)
 pub(super) fn response_size_limit() -> usize {
     4 * 1024 * 1024 // 4MB in bytes

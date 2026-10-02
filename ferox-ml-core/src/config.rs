@@ -65,6 +65,19 @@ pub struct Config {
     /// the run's online updates are saved back. In learn mode, this is where the
     /// model trained from the labs is written.
     pub model_path: String,
+
+    // --- directory-of-wordlists driver (list mode) ---
+    /// Directory containing wordlist files. When set, the fingerprint/seed phase
+    /// is skipped entirely and scanning is driven by these lists.
+    #[serde(default)]
+    pub list_dir: String,
+    /// How many list entries to inject per round.
+    #[serde(default = "default_list_chunk")]
+    pub list_chunk_size: usize,
+}
+
+fn default_list_chunk() -> usize {
+    200
 }
 
 impl Default for Config {
@@ -96,6 +109,8 @@ impl Default for Config {
             scope: vec![],
             state_dir: ".feroxml".into(),
             model_path: String::new(),
+            list_dir: String::new(),
+            list_chunk_size: default_list_chunk(),
         }
     }
 }
