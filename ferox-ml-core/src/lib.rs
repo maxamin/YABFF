@@ -19,8 +19,11 @@
 
 use std::collections::HashMap;
 
+pub mod algo;
 pub mod dedup;
+pub mod dynsdt;
 pub mod fingerprint;
+pub mod freqtrie;
 pub mod interfaces;
 pub mod markov;
 pub mod profiles;
@@ -28,7 +31,7 @@ pub mod ranking;
 pub mod rng;
 pub mod scheduler;
 pub mod tokenize;
-pub mod trie;
+pub mod tst;
 
 // The adaptive orchestration layer: a runner-agnostic budgeted feedback loop that
 // drives a `FeroxRunner` (subprocess today; an in-process runner can implement the

@@ -706,6 +706,14 @@ pub fn initialize() -> Command {
                 .num_args(1)
                 .help_heading("Scan settings")
                 .help("List entries to inject per round when --ml-list-dir is set (default: 200)")
+        ).arg(
+            Arg::new("ml_algo")
+                .long("ml-algo")
+                .value_name("ALGO")
+                .num_args(1)
+                .value_parser(["auto", "markov", "trie", "dynsdt", "tst"])
+                .help_heading("Scan settings")
+                .help("Prediction algorithm for --ml-loop: auto (default; dynsdt in list mode, markov otherwise), markov, trie, dynsdt, tst")
         );
 
     /////////////////////////////////////////////////////////////////////

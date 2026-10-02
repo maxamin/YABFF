@@ -17,7 +17,7 @@ use std::collections::{BinaryHeap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
-use crate::interfaces::Predictor;
+use crate::interfaces::{PathModel, Predictor};
 use crate::tokenize::path_segments;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -251,6 +251,17 @@ impl Predictor for DynSdt {
 
     fn learn(&mut self, path: &str) {
         self.observe(path);
+    }
+}
+
+impl PathModel for DynSdt {
+    fn save_json(&self) -> anyhow::Result<String> {
+        self.to_json()
+    }
+
+    fn merge_json(&mut self, text: &str) -> anyhow::Result<()> {
+        self.merge(&DynSdt::from_json(text)?);
+        Ok(())
     }
 }
 

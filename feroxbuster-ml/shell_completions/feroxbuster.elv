@@ -86,6 +86,7 @@ set edit:completion:arg-completer[feroxbuster] = {|@words|
             cand --ml-scheduler 'Bandit that scales per-directory prediction budget (default: thompson)'
             cand --ml-list-dir 'Directory of wordlists to drive --ml-loop (skips fingerprinting; learns structure from results). Supersedes -w'
             cand --ml-list-chunk 'List entries to inject per round when --ml-list-dir is set (default: 200)'
+            cand --ml-algo 'Prediction algorithm for --ml-loop: auto (default; dynsdt in list mode, markov otherwise), markov, trie, dynsdt, tst'
             cand -o 'Output file to write results to (use w/ --json for JSON entries)'
             cand --output 'Output file to write results to (use w/ --json for JSON entries)'
             cand --debug-log 'Output file to write log entries (use w/ --json for JSON entries)'

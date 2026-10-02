@@ -885,6 +885,7 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
         state_dir: std::env::temp_dir().to_string_lossy().into_owned(),
         list_dir: config.ml_list_dir.clone(),
         list_chunk_size: config.ml_list_chunk,
+        algo: config.ml_algo.clone(),
         ..MlConfig::default()
     };
     if !cfg.list_dir.is_empty() {
@@ -925,6 +926,7 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
     println!("=== feroxbuster --ml-loop summary ===");
     println!("target           : {}", summary.target);
     println!("profile          : {}", summary.profile);
+    println!("algorithm        : {}", summary.algo);
     println!("rounds           : {}", summary.rounds);
     println!("requests used    : {}", summary.requests_used);
     println!("resources found  : {}", summary.discovered.len());

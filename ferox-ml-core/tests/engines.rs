@@ -645,7 +645,7 @@ fn list_mode_persists_a_dynsdt_model_that_accumulates_across_runs() {
     // List mode trains a Dynamic Score-Decomposed Trie online and writes it to
     // `model_path`, so a later run reloads it and predicts from day one — more
     // runs => better model.
-    use ferox_ml_core::trie::DynSdt;
+    use ferox_ml_core::dynsdt::DynSdt;
 
     let dir = std::env::temp_dir().join(format!("ferox-persist-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&dir);

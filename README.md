@@ -90,7 +90,9 @@ independently unit-tested engines. They consume a lightweight `ProbeResp`
 (`{ url, status, headers }`) view, so they never depend on either tool's own
 response types. The swap-in traits in
 [`interfaces.rs`](ferox-ml-core/src/interfaces.rs) (`Classifier`, `Predictor`,
-`Scheduler`) let a better algorithm drop in without touching callers.
+`PathModel`, `Scheduler`) let a better algorithm drop in without touching callers —
+the prediction family (`--algo markov|trie|dynsdt|tst`) is selected this way at
+runtime via [`algo.rs`](ferox-ml-core/src/algo.rs).
 
 ### 1. Framework fingerprinting — K-Means / nearest-centroid
 [`fingerprint.rs`](ferox-ml-core/src/fingerprint.rs) · [`profiles.rs`](ferox-ml-core/src/profiles.rs)
@@ -115,17 +117,58 @@ This is what keeps catch-all / soft-404 servers from forcing a confident wrong
 guess. (`KMeansClassifier` reduces to nearest-centroid for a single target and
 exists to seed real clustering when batch-probing many hosts.)
 
-### 2. Path prediction — variable-order Markov / PPM
-[`markov.rs`](ferox-ml-core/src/markov.rs)
+### 2. Path prediction — pluggable autocomplete models (`--algo`)
+[`algo.rs`](ferox-ml-core/src/algo.rs) · [`markov.rs`](ferox-ml-core/src/markov.rs) · [`freqtrie.rs`](ferox-ml-core/src/freqtrie.rs) · [`dynsdt.rs`](ferox-ml-core/src/dynsdt.rs) · [`tst.rs`](ferox-ml-core/src/tst.rs)
 
-Paths are tokenized into segments (`/api/v1/users → [api, v1, users]`). The model
-holds transition counts keyed on contexts up to **order 3** (configurable via
-`--ml-order`), with additive smoothing (α = 0.5) and a low-probability prune
-threshold. Prediction uses **PPM back-off**: the longest matching context wins,
-falling back to shorter contexts when a long one is unseen — so it generalizes
-from `/a/b/c` to predict `c` after an unseen `/z/a/b`. Each profile ships a **seed
-transition matrix** for cold starts; `learn()` updates the model online from every
-discovered URL; models serialize to JSON and **merge** across runs.
+Paths are tokenized into segments (`/api/v1/users → [api, v1, users]`), and the
+next-segment predictor is **selectable**. Every model implements one `PathModel`
+interface (predict · learn · JSON save/merge), and [`algo.rs`](ferox-ml-core/src/algo.rs)
+is the selector — so swapping algorithms is a flag, not a code change:
+
+```
+--ml-algo auto      # default: DynSDT in list mode, seeded Markov otherwise
+--ml-algo markov    # variable-order Markov / PPM
+--ml-algo trie      # plain frequency prefix trie (naive-tree baseline)
+--ml-algo dynsdt    # dynamic score-decomposed trie (heap top-k autocomplete)
+--ml-algo tst       # ternary search tree
+```
+
+- **`markov`** — transition counts keyed on contexts up to **order 3**
+  (`--ml-order`), additive smoothing (α = 0.5), **PPM back-off**: the longest
+  matching context wins, falling back to shorter ones — so it *generalizes* from
+  `/a/b/c` to predict `c` after an unseen `/z/a/b`, and ships a per-profile **seed
+  matrix** for cold starts.
+- **`trie`** — a frequency prefix trie: nodes are prefixes with hit counts; top-k
+  scans the whole completion subtree and sorts. The honest naive-tree baseline.
+- **`dynsdt`** — the **Dynamic Score-Decomposed Trie**
+  ([Validark](https://validark.dev/DynSDT/)): each node caches a `subtree_max` and
+  keeps its children **score-sorted**, so top-k is a best-first first-child /
+  next-sibling walk over a bounded DEPQ — **`O(|p| + k log k)`**, no full subtree
+  scan. Updates re-sort along the path online, so it sharpens as it learns.
+- **`tst`** — a ternary search tree: the same trie stored BST-linked (`lo`/`eq`/`hi`),
+  trading hashing for pointer-light navigation and locality.
+
+All three tree models store the same counts, so they find the **same paths**; they
+differ in query cost and memory. Markov differs in *kind* — it generalizes across
+contexts. `learn()` updates whichever model is selected online from every
+discovered URL, and all of them serialize to JSON and **merge** across runs
+(more runs → better model).
+
+| `--algo` | structure | top-k query | generalizes? | model after lab* |
+|----------|-----------|-------------|:---:|---|
+| `markov` | n-gram counts + back-off | `O(order · σ)` per context | **yes** | 443 B |
+| `trie`   | frequency prefix trie | `O(m + c log c)` (scan subtree) | no | **274 B** |
+| `dynsdt` | score-decomposed trie | **`O(\|p\| + k log k)`** (best-first DEPQ) | no | 596 B |
+| `tst`    | ternary search tree | `O(m + c log c)` (scan subtree) | no | 361 B |
+
+<sub>`p`/`m` = prefix length · `c` = completions under the prefix · `k` = results wanted · `σ` = fan-out. *Model = serialized JSON after the Juice Shop list-mode benchmark (6 paths learned).</sub>
+
+**Live sweep** (Juice Shop, same 20-entry list dir, `--ml-list-chunk 50`): all four
+recover the **same 6 resources**; the tree models in **1 round / 20 requests**,
+Markov in **2 rounds / 26 requests** (its back-off proposes extra candidates, so it
+probes more). DynSDT is the list-mode default because its top-k stays
+output-sensitive when a directory accumulates thousands of learned children. Full
+methodology and numbers: [`docs/analysis/autocomplete-algorithms.md`](docs/analysis/autocomplete-algorithms.md).
 
 ### 3. Budget scheduling — Thompson / UCB1 bandit
 [`scheduler.rs`](ferox-ml-core/src/scheduler.rs)
@@ -214,13 +257,21 @@ feroxbuster --ml -u https://target.test -w /usr/share/seclists/Discovery/Web-Con
 
 # persistent learning: load a model, keep adapting, save it back (implies --ml)
 feroxbuster --ml-model ./model.json -u https://target.test -w common.txt
+
+# list-driven loop with an explicit prediction algorithm (DynSDT shown)
+feroxbuster --ml-loop --ml-list-dir ./lists --ml-algo dynsdt \
+            --ml-model ./model.json -u https://target.test
 ```
 
 | Flag | Meaning (default) |
 |---|---|
 | `--ml` | Enable the ML layer. |
+| `--ml-loop` | Run the adaptive bounded-scan feedback loop instead of a single scan. |
+| `--ml-algo <name>` | Prediction algorithm: `auto` (default) · `markov` · `trie` · `dynsdt` · `tst`. |
+| `--ml-list-dir <dir>` | Directory of wordlists to drive `--ml-loop` (list mode; skips fingerprinting). |
+| `--ml-list-chunk <n>` | List entries injected per round in list mode (`200`). |
 | `--ml-model <path>` | Load + update a learned model; written back on exit. Implies `--ml`. |
-| `--ml-order <n>` | Max Markov order / PPM back-off depth (`3`). |
+| `--ml-order <n>` | Max Markov order / PPM back-off depth (`3`; only for `--ml-algo markov`). |
 | `--ml-predictions <n>` | Base predictions injected per directory (`25`; bandit scales 25–100 %). |
 | `--ml-scheduler <name>` | Budget bandit: `thompson` (default) · `ucb1` · `round_robin`. |
 | `--no-ml-rank` | Disable BM25 re-ranking. |
@@ -248,6 +299,7 @@ feroxml -u https://target.test --i-have-authorization --model .feroxml/model.jso
 | `--learn` | Learn mode: train a model instead of scanning. |
 | `--model <path>` | Model to load+update (scan) or write (learn). |
 | `--scope <host>` | Extra in-scope hosts (repeatable); out-of-scope URLs are dropped. |
+| `--algo <name>` | Prediction algorithm: `auto` (default) · `markov` · `trie` · `dynsdt` · `tst`. |
 | `--scheduler` / `--classifier` | `thompson\|ucb1\|round_robin` / `nearest_centroid\|kmeans`. |
 | `--top-n` / `--max-rounds` / `--max-depth` / `--request-budget` | Loop/budget limits. |
 | `--seed-wordlist <file>` / `--seed-per-round <n>` | Mix baseline paths alongside predictions. |
@@ -260,8 +312,8 @@ is deterministic and CI-friendly. Live behavior is captured into fixtures and
 replayed.
 
 ```bash
-cargo test --workspace            # everything: 644 tests across 26 binaries
-cargo test -p ferox-ml-core       # the engines (47 tests)
+cargo test --workspace            # everything: 674 tests across 26 binaries
+cargo test -p ferox-ml-core       # the engines (85 tests)
 cargo test -p feroxbuster ml::    # the in-crate ML façade
 cargo test -p feroxbuster --test confusion -- --nocapture   # prints the confusion matrix
 ```
@@ -294,6 +346,11 @@ The ML path is measured, not asserted — all three are reproducible and documen
   Fingerprint accuracy is **100 % on clean signal**, **40 % on real catch-all
   labs**; the catch-all guard cuts confident errors **3 → 1 with no loss of
   correct answers**. All eight enhancements (E1–E8) shipped.
+- **Autocomplete-algorithm comparison** — [`docs/analysis/autocomplete-algorithms.md`](docs/analysis/autocomplete-algorithms.md).
+  Markov vs. the tree models (frequency trie, DynSDT, TST) selectable via `--algo`:
+  query complexity, memory, and a live Juice Shop sweep. The tree models find the
+  same paths; DynSDT keeps top-k **output-sensitive** (`O(|p| + k log k)`), which is
+  why it is the list-mode default.
 - **Classifier benchmark** — [`docs/analysis/fingerprint-classifier-benchmark.md`](docs/analysis/fingerprint-classifier-benchmark.md)
   + an HTML confusion-matrix heatmap [`fingerprint-classifier-heatmap.html`](docs/analysis/fingerprint-classifier-heatmap.html).
   Eight classifiers (hand centroids, Naive Bayes, logistic regression, k-NN, SVM,
@@ -305,7 +362,7 @@ The ML path is measured, not asserted — all three are reproducible and documen
 ## Repository layout
 
 ```
-ferox-ml-core/    shared ML engine crate (fingerprint · markov · scheduler · ranking · dedup)
+ferox-ml-core/    shared ML engine crate (fingerprint · predictors: markov/trie/dynsdt/tst + algo selector · scheduler · ranking · dedup)
 feroxbuster-ml/   feroxbuster fork with the native in-crate ML layer (--ml)
 feroxml/          standalone adaptive ML orchestrator around feroxbuster
 docs/

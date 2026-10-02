@@ -254,6 +254,17 @@ impl Predictor for MarkovModel {
     }
 }
 
+impl crate::interfaces::PathModel for MarkovModel {
+    fn save_json(&self) -> anyhow::Result<String> {
+        self.to_json()
+    }
+
+    fn merge_json(&mut self, text: &str) -> anyhow::Result<()> {
+        self.merge(&MarkovModel::from_json(text)?);
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

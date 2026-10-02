@@ -86,6 +86,11 @@ struct Cli {
     #[arg(long)]
     classifier: Option<String>,
 
+    /// Prediction algorithm: auto | markov | trie | dynsdt | tst. `auto` picks
+    /// DynSDT in list mode and the profile-seeded Markov model otherwise.
+    #[arg(long)]
+    algo: Option<String>,
+
     /// Deterministic seed.
     #[arg(long)]
     seed: Option<u64>,
@@ -140,6 +145,9 @@ fn build_config(cli: &Cli) -> anyhow::Result<Config> {
     }
     if let Some(v) = &cli.classifier {
         cfg.classifier = v.clone();
+    }
+    if let Some(v) = &cli.algo {
+        cfg.algo = v.clone();
     }
     if let Some(v) = cli.seed {
         cfg.seed = v;
@@ -248,8 +256,8 @@ fn main() {
     // capture display values before cfg is moved into the campaign
     let scope_note = format!("{:?}", cfg.scope);
     let engines_note = format!(
-        "classifier={} predictor={} scheduler={} ranker={}",
-        cfg.classifier, cfg.predictor, cfg.scheduler, cfg.ranker
+        "classifier={} algo={} predictor={} scheduler={} ranker={}",
+        cfg.classifier, cfg.algo, cfg.predictor, cfg.scheduler, cfg.ranker
     );
     let budget_note = format!(
         "rounds<={} depth<={} requests<={}",
@@ -309,6 +317,7 @@ fn main() {
             println!("\n=== feroxml summary ===");
             println!("target            : {}", summary.target);
             println!("detected profile  : {}", summary.profile);
+            println!("algorithm         : {}", summary.algo);
             print!("centroid distances:");
             for (name, d) in &summary.distances {
                 print!(" {name}={d:.3}");

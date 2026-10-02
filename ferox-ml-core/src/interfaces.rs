@@ -17,6 +17,22 @@ pub trait Predictor {
     fn learn(&mut self, path: &str);
 }
 
+/// A persistable prediction model, selectable at runtime via [`crate::algo`].
+///
+/// Every autocomplete algorithm (Markov/PPM, a plain frequency trie, the DynSDT,
+/// a ternary search tree, ...) implements this one interface, so the orchestrator
+/// treats them interchangeably and the `--algo` selector can swap them freely.
+/// [`save_json`](PathModel::save_json) / [`merge_json`](PathModel::merge_json)
+/// give cross-run persistence (more runs => better model).
+pub trait PathModel: Predictor {
+    /// Serialize the whole model to JSON for persistence.
+    fn save_json(&self) -> anyhow::Result<String>;
+
+    /// Merge a previously persisted model of the **same** algorithm (its JSON).
+    /// A format mismatch returns an error and leaves `self` unchanged.
+    fn merge_json(&mut self, text: &str) -> anyhow::Result<()>;
+}
+
 /// Phase 3 — decide which discovered directory ("arm") to expand next.
 pub trait Scheduler {
     fn add_arm(&mut self, arm: &str);
