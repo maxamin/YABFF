@@ -53,6 +53,29 @@ Unlimited reaches the tree's bottom; `--depth N` bounds it. Full run at the defa
 So "unlimited" does not mean "runaway" on a finite site: it means "as deep as the
 site actually goes."
 
+### 2b. The default on a real lab — OWASP Juice Shop
+
+Same recursive list (14 entries across two sub-folders), one knob swept, against the
+live Juice Shop app. The default (no `--depth`) behaves exactly as `--depth 0`:
+
+| depth setting | resources | deepest | requests | rounds | wall-clock |
+|---------------|:---:|:---:|:---:|:---:|:---:|
+| **default (unlimited)** | **10** | **4** | 98 | 7 | 11 s |
+| `--depth 1` | 5 | 1 | 14 | 1 | 7 s |
+| `--depth 2` | 7 | 2 | 28 | 2 | 8 s |
+| `--depth 0` (explicit) | 10 | 4 | 98 | 7 | 9 s |
+
+The default and `--depth 0` are identical (10 resources, depth 4); bounding with
+`--depth N` progressively limits reach (5 → 7 → 10) and cost. At the default it walks
+Juice Shop's full chain to depth 4 with no flags:
+
+```
+/assets  /ftp  /main.js  /robots.txt  /video         (depth 1)
+/assets/i18n  /assets/public                          (depth 2)
+/assets/public/css  /assets/public/images             (depth 3)
+/assets/public/images/products                        (depth 4)
+```
+
 ## 3. Scale reality — full SecLists × unlimited depth is effectively unbounded
 
 Re-applying 4.4M entries to **every** discovered directory, at unlimited depth, is a
