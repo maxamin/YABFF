@@ -90,27 +90,44 @@ no `--depth`, no `--ml-list-max` — against the live Juice Shop, time-boxed to 
 | **resources found** | **0** |
 | directories expanded | 0 (still only the root arm) |
 
-Zero finds after 50k requests — not a bug, a **load-order** effect. The pool is built
-in sorted full-path order, so the first files read are
+This run used the **old** pool order (sorted full path), and zero finds after 50k
+requests was a **load-order** effect: the first files read were
 `ActiveDirectory-small.txt`, `AdobeXML.fuzz.txt`, `BurpSuite-ParamMiner/…` (HTTP
-*header* names, not paths), `CMS/Adobe-AEM…` — all low-signal for Juice Shop. The
-generic high-hit list (`common.txt`, with `/assets`, `/ftp`, `robots.txt`) sorts far
-later and the cursor never reached it in 50k entries. At ~100 req/s the full 4.4M is
-**~10+ hours for the root level alone**, before any recursion.
+*header* names, not paths), `CMS/Adobe-AEM…` — all low-signal for Juice Shop — while
+the generic high-hit list (`common.txt`, with `/assets`, `/ftp`, `robots.txt`) sorted
+far later and the cursor never reached it. Coverage, it turns out, is dominated by
+**list order, not raw size**: a 14-entry *curated* list found Juice Shop's full
+depth-4 chain in 11 s (§2b), but 50k alphabetical SecLists entries found nothing.
 
-Contrast §2b: a 14-entry *curated* list found Juice Shop's full depth-4 chain in 11 s.
-The lesson is that **coverage is dominated by list content/order, not raw size** —
-blindly firing all of SecLists in path order spends the early budget on esoteric
-lists. In practice:
+### 3b. Fix — the pool is now ranked by signal
 
-- **Order/curate the lists** — put high-signal generic lists first (point
-  `--ml-list-dir` at a folder whose files sort useful-first, or just at `common.txt`'s
-  directory), rather than the whole tree in alphabetical order.
+`load_list_dir` no longer returns the tree in path order. It ranks every entry by
+**document frequency** (how many of the wordlist files contain it), then shorter,
+then lexicographic — so universally-common tokens surface first and one-off esoteric
+entries sink. The top of the real `Discovery/Web-Content` tree (4.4M entries) is now:
+
+```
+README.md  start  contact  privacy  online  website  extra  index.php  media
+direct  test  account  status  video  google  links  package.json  .htaccess
+browser  lang  link  service  details  help  home  …
+```
+
+These are real generic paths that hit live apps immediately (Juice Shop itself serves
+`/video`, `index.php`, …) — versus the old first entries (`ActiveDirectory`,
+`BurpSuite` header names). Two consequences:
+
+- The full-tree default now front-loads high-hit tokens, so it finds real paths in the
+  first handful of requests instead of grinding through header-name lists.
+- `--ml-list-max N` now keeps the **top-N by signal**, so a cap is a high-signal
+  subset rather than an alphabetical accident.
+
+Still bound a large run in practice:
+
 - `--depth N` — the single biggest lever on total cost once directories are found.
-- `--ml-list-max N` — cap how much of the tree is loaded.
+- `--ml-list-max N` — cap to the top-N highest-signal entries.
 - `--scan-limit`, a request/time budget, or Ctrl-C — stop a long run.
 
-Progress is now emitted to stderr (`[ml-loop] list pool loaded: N entries` and a
+Progress is emitted to stderr (`[ml-loop] list pool loaded: N entries` and a
 `rounds=/requests=/found=/arms=` line every 25 rounds) so a long run is observable.
 
 Soft-404 filtering and per-path de-duplication guard against catch-all runaway, but

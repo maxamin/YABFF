@@ -60,11 +60,15 @@ pub fn load_wordlist(path: &str, cap: usize) -> std::io::Result<Vec<String>> {
 
 /// Load every file in `dir` **recursively** (walking the whole directory tree,
 /// e.g. all of SecLists' `Discovery/Web-Content`) and merge them into one
-/// de-duplicated, order-preserving pool. Files are read in sorted full-path order
-/// for determinism. Lines are trimmed; empty lines and `#` comments are skipped.
-/// `cap` bounds the total number of entries; **`cap == 0` means unlimited** (use
-/// every entry in the tree). Files that can't be read (e.g. binary) are skipped
-/// rather than aborting the whole load.
+/// de-duplicated pool **ranked by signal**: entries are ordered by *document
+/// frequency* (how many of the files contain them) descending, then shorter first,
+/// then lexicographically — so universally-common tokens (`admin`, `api`,
+/// `index.php`, `images`, …) come first and one-off esoteric entries (a specific
+/// vendor path, a fuzzing header name) come last. Lines are trimmed; empty lines
+/// and `#` comments are skipped. `cap` keeps the highest-signal entries:
+/// **`cap == 0` means unlimited** (every entry in the tree); otherwise the top
+/// `cap` by signal. Files that can't be read (e.g. binary) are skipped rather than
+/// aborting the whole load. The result is deterministic.
 pub fn load_list_dir(dir: &str, cap: usize) -> std::io::Result<Vec<String>> {
     // recursively collect every file under `dir`
     let mut files: Vec<std::path::PathBuf> = Vec::new();
@@ -81,26 +85,33 @@ pub fn load_list_dir(dir: &str, cap: usize) -> std::io::Result<Vec<String>> {
             }
         }
     }
-    files.sort(); // determinism: full-path order, not read_dir order
-    let unlimited = cap == 0;
-    let mut pool: Vec<String> = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
+    // document frequency: count the number of files each distinct entry appears in
+    let mut df: HashMap<String, u32> = HashMap::new();
     for f in files {
         let Ok(text) = std::fs::read_to_string(&f) else {
             continue; // skip unreadable/binary files
         };
+        let mut in_file: HashSet<String> = HashSet::new();
         for line in text.lines() {
             let w = line.trim();
             if w.is_empty() || w.starts_with('#') {
                 continue;
             }
-            if seen.insert(w.to_string()) {
-                pool.push(w.to_string());
-                if !unlimited && pool.len() >= cap {
-                    return Ok(pool);
-                }
+            if in_file.insert(w.to_string()) {
+                *df.entry(w.to_string()).or_insert(0) += 1;
             }
         }
+    }
+    // rank by signal: higher document frequency first, then shorter, then lexical
+    let mut scored: Vec<(u32, String)> = df.into_iter().map(|(w, n)| (n, w)).collect();
+    scored.sort_by(|(na, a), (nb, b)| {
+        nb.cmp(na)
+            .then_with(|| a.len().cmp(&b.len()))
+            .then_with(|| a.as_str().cmp(b.as_str()))
+    });
+    let mut pool: Vec<String> = scored.into_iter().map(|(_, w)| w).collect();
+    if cap != 0 && pool.len() > cap {
+        pool.truncate(cap); // keep the top `cap` highest-signal entries
     }
     Ok(pool)
 }
@@ -226,20 +237,35 @@ mod tests {
     }
 
     #[test]
-    fn load_list_dir_merges_sorted_dedups_and_caps() {
+    fn load_list_dir_ranks_by_signal_dedups_and_caps() {
         let dir = std::env::temp_dir().join(format!("ferox-lists-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
-        // b.txt sorts after a.txt; "api" appears in both (dedup); comments/empties skipped
+        // "api" appears in BOTH files (document frequency 2) -> highest signal.
+        // the rest have df 1 -> ordered shorter-first, then lexicographically.
         std::fs::write(dir.join("a.txt"), "admin\n# comment\nlogin\n\napi\n").unwrap();
         std::fs::write(dir.join("b.txt"), "api\nusers\n").unwrap();
         let pool = load_list_dir(dir.to_str().unwrap(), 100).unwrap();
-        assert_eq!(pool, ["admin", "login", "api", "users"]); // a.txt first, deduped
-        // cap bounds the total
+        // api (df 2) first; then df-1 by len asc then lex: admin,login,users (all len 5)
+        assert_eq!(pool, ["api", "admin", "login", "users"]);
+        // cap keeps the HIGHEST-signal entries
         let capped = load_list_dir(dir.to_str().unwrap(), 2).unwrap();
-        assert_eq!(capped, ["admin", "login"]);
+        assert_eq!(capped, ["api", "admin"]);
         // cap == 0 means unlimited (every entry)
         let all = load_list_dir(dir.to_str().unwrap(), 0).unwrap();
-        assert_eq!(all, ["admin", "login", "api", "users"]);
+        assert_eq!(all, ["api", "admin", "login", "users"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_list_dir_floats_common_tokens_above_esoteric_ones() {
+        // mimic SecLists: one generic token in many files, plus per-file junk
+        let dir = std::env::temp_dir().join(format!("ferox-sig-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        std::fs::write(dir.join("a.txt"), "admin\nzzz-vendor-specific-aaa\n").unwrap();
+        std::fs::write(dir.join("b.txt"), "admin\nzzz-vendor-specific-bbb\n").unwrap();
+        std::fs::write(dir.join("c.txt"), "admin\nzzz-vendor-specific-ccc\n").unwrap();
+        let pool = load_list_dir(dir.to_str().unwrap(), 0).unwrap();
+        assert_eq!(pool[0], "admin", "common token must rank first: {pool:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

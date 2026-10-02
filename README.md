@@ -296,10 +296,13 @@ feroxbuster --ml-loop --ml-list-dir /usr/share/seclists/Discovery/Web-Content \
 ```
 
 In list mode the wordlist directory is loaded **recursively** (the whole tree, e.g.
-all of SecLists `Discovery/Web-Content` and its sub-folders) and **re-applied to
-every directory the scan discovers**, like feroxbuster's own recursion: each found
-endpoint is fuzzed with the full list, and after each hit the model predicts likely
-sibling paths and tries those first before continuing the list. **List mode defaults
+all of SecLists `Discovery/Web-Content` and its sub-folders) and **ranked by signal**
+— entries are ordered by how many wordlist files contain them, so high-hit generic
+tokens (`index.php`, `media`, `test`, `status`, …) come first and one-off esoteric
+entries last (and `--ml-list-max N` keeps the top-N by signal). The pool is then
+**re-applied to every directory the scan discovers**, like feroxbuster's own
+recursion: each found endpoint is fuzzed with the full list, and after each hit the
+model predicts likely sibling paths and tries those first before continuing the list. **List mode defaults
 to unlimited recursion depth** (the whole directory tree) and lifts the round/request
 caps, so the scan runs until the tree and the lists are fully consumed — bound it
 with `--depth N`, `--ml-list-max N`, `--scan-limit`, or Ctrl-C. soft-404 filtering and
@@ -311,9 +314,9 @@ bound.
 | `--ml` | Enable the ML layer. |
 | `--ml-loop` | Run the adaptive bounded-scan feedback loop instead of a single scan. |
 | `--ml-algo <name>` | Prediction algorithm: `auto` (default) · `markov` · `trie` · `dynsdt` · `tst`. |
-| `--ml-list-dir <dir>` | Directory of wordlists (loaded **recursively**) driving `--ml-loop` (list mode; skips fingerprinting). |
+| `--ml-list-dir <dir>` | Directory of wordlists (loaded **recursively**, ranked by signal) driving `--ml-loop` (list mode; skips fingerprinting). |
 | `--ml-list-chunk <n>` | List entries injected per directory per round in list mode (`200`). |
-| `--ml-list-max <n>` | Cap on entries loaded from the tree; `0` = unlimited — every entry (default). |
+| `--ml-list-max <n>` | Cap on entries loaded from the tree (keeps the **top-N by signal**); `0` = unlimited — every entry (default). |
 | `--depth <n>` | Recursion depth. List mode defaults to **unlimited**; pass `--depth N` to bound it (`0` = unlimited explicitly). Non-list mode keeps feroxbuster's default `4`. |
 | `--ml-model <path>` | Load + update a learned model; written back on exit. Implies `--ml`. |
 | `--ml-order <n>` | Max Markov order / PPM back-off depth (`3`; only for `--ml-algo markov`). |
