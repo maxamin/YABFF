@@ -12,10 +12,10 @@
 //!    only return children of a prefix they have literally observed.
 //!
 //! 2. **End-to-end list-mode scan (a systems note).** Each model drives the real
-//!    [`Campaign`] loop over a shared wordlist and budget. List mode consumes its
-//!    pool with one forward cursor and does not re-try words per directory, so deep
-//!    discovery is bounded the same way for every model — a property of the mode,
-//!    not the predictor.
+//!    [`Campaign`] loop over a shared wordlist and budget. List mode re-applies the
+//!    wordlist to every directory (per-arm cursors), so the scan fully recurses and
+//!    every model reaches full coverage; the predictor affects efficiency, and only
+//!    changes *reach* for paths the wordlist doesn't contain.
 //!
 //! Run: `cargo run -p ferox-ml-core --example algo_bench [--release]`
 
@@ -262,9 +262,10 @@ fn end_to_end_scan() {
         );
     }
     println!(
-        "\nAll models tie: list mode consumes the pool with one forward cursor and\n\
-         does not re-try words per directory, so depth is bounded by the mode, not\n\
-         the predictor. (The recall table above is where the algorithms differ.)"
+        "\nList mode re-applies the wordlist to every directory (per-arm cursors), so\n\
+         the scan fully recurses and every model reaches 100% coverage. The predictor\n\
+         then affects efficiency (requests to full coverage) rather than reach; its\n\
+         real reach advantage shows only for paths the wordlist lacks (see 1b)."
     );
     let _ = std::fs::remove_dir_all(&dir);
 }

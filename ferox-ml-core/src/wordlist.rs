@@ -1,6 +1,6 @@
 //! Per-round wordlist construction and cross-round de-duplication.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::tokenize::path_segments;
 
@@ -90,38 +90,59 @@ pub fn load_list_dir(dir: &str, cap: usize) -> std::io::Result<Vec<String>> {
     Ok(pool)
 }
 
-/// A forward cursor over a merged list pool. Each `next_chunk` returns the next
-/// run of entries not already tried, in pool order, advancing past everything it
-/// scans. It **stops** at the end of the pool (no wrap-around): once exhausted it
-/// returns an empty chunk.
-pub struct ListCursor {
+/// A merged list pool that is **re-applied to every directory**: each arm (a
+/// discovered directory) gets its own forward cursor over the whole pool, so the
+/// same word is tried under every directory — like feroxbuster's recursion — rather
+/// than being consumed once globally. Each arm's cursor stops at the end of the pool
+/// (no wrap-around).
+pub struct ListPool {
     pool: Vec<String>,
-    pos: usize,
+    /// per-arm walk position into `pool`
+    pos: HashMap<String, usize>,
 }
 
-impl ListCursor {
+impl ListPool {
     pub fn new(pool: Vec<String>) -> Self {
-        Self { pool, pos: 0 }
+        Self {
+            pool,
+            pos: HashMap::new(),
+        }
     }
 
-    /// Up to `n` entries from the pool not present in `tried`, in pool order.
-    /// Advances the cursor past every entry it inspects (tried or not), so a given
-    /// pool position is served at most once across the campaign.
-    pub fn next_chunk(&mut self, tried: &HashSet<String>, n: usize) -> Vec<String> {
+    pub fn is_empty(&self) -> bool {
+        self.pool.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.pool.len()
+    }
+
+    /// Up to `n` entries for `arm`, in pool order, skipping anything in `skip`
+    /// (this arm's already-scheduled words), advancing the arm's own cursor past
+    /// every entry it inspects. A given pool position is served at most once *per
+    /// arm*, so the wordlist is re-applied independently to each directory.
+    pub fn next_chunk(&mut self, arm: &str, skip: &HashSet<String>, n: usize) -> Vec<String> {
         let mut out = Vec::with_capacity(n.min(16));
-        while self.pos < self.pool.len() && out.len() < n {
-            let w = &self.pool[self.pos];
-            self.pos += 1;
-            if !tried.contains(w) {
+        let pos = self.pos.entry(arm.to_string()).or_insert(0);
+        while *pos < self.pool.len() && out.len() < n {
+            let w = &self.pool[*pos];
+            *pos += 1;
+            if !skip.contains(w) {
                 out.push(w.clone());
             }
         }
         out
     }
 
-    /// Whether the cursor has consumed the whole pool.
-    pub fn is_exhausted(&self) -> bool {
-        self.pos >= self.pool.len()
+    /// Whether `arm` has walked the whole pool.
+    pub fn arm_exhausted(&self, arm: &str) -> bool {
+        self.pos.get(arm).copied().unwrap_or(0) >= self.pool.len()
+    }
+
+    /// Whether any of `arms` still has pool entries left to serve (a never-seen arm
+    /// counts as having the whole pool ahead of it).
+    pub fn any_remaining(&self, arms: &[String]) -> bool {
+        !self.pool.is_empty() && arms.iter().any(|a| !self.arm_exhausted(a))
     }
 }
 
@@ -205,22 +226,35 @@ mod tests {
     }
 
     #[test]
-    fn list_cursor_serves_unseen_in_order_then_stops() {
-        let mut cur = ListCursor::new(vec![
+    fn list_pool_serves_each_arm_in_order_skipping_tried_then_stops() {
+        let mut pool = ListPool::new(vec![
             "a".into(), "b".into(), "c".into(), "d".into(), "e".into(),
         ]);
         let mut tried: HashSet<String> = HashSet::new();
-        tried.insert("b".into()); // already scheduled -> skipped, but still scanned past
+        tried.insert("b".into()); // already scheduled for this arm -> skipped, scanned past
 
-        let first = cur.next_chunk(&tried, 2); // scans a(ok), b(skip), c(ok)
+        let first = pool.next_chunk("/x/", &tried, 2); // scans a(ok), b(skip), c(ok)
         assert_eq!(first, ["a", "c"]);
         for w in &first {
             tried.insert(w.clone());
         }
-        let second = cur.next_chunk(&tried, 10); // d, e
+        let second = pool.next_chunk("/x/", &tried, 10); // d, e
         assert_eq!(second, ["d", "e"]);
-        assert!(cur.is_exhausted());
-        assert!(cur.next_chunk(&tried, 5).is_empty()); // no wrap-around
+        assert!(pool.arm_exhausted("/x/"));
+        assert!(pool.next_chunk("/x/", &tried, 5).is_empty()); // no wrap-around
+    }
+
+    #[test]
+    fn list_pool_reapplies_whole_wordlist_per_directory() {
+        let mut pool = ListPool::new(vec!["a".into(), "b".into(), "c".into()]);
+        let empty: HashSet<String> = HashSet::new();
+        // each arm walks the full pool independently: "a" is served under BOTH arms
+        assert_eq!(pool.next_chunk("/one/", &empty, 3), ["a", "b", "c"]);
+        assert!(pool.arm_exhausted("/one/"));
+        assert!(!pool.arm_exhausted("/two/")); // unseen arm still has the whole pool
+        assert!(pool.any_remaining(&["/one/".into(), "/two/".into()]));
+        assert_eq!(pool.next_chunk("/two/", &empty, 3), ["a", "b", "c"]);
+        assert!(!pool.any_remaining(&["/one/".into(), "/two/".into()]));
     }
 
     #[test]

@@ -167,12 +167,15 @@ runs (more runs → better model).
 
 **Shallow sweep** (Juice Shop, same 20-entry list dir): all four recover the **same 6
 resources** — the tree models in 1 round / 20 requests, Markov in 2 / 26 (its seed
-proposes extras). **Deep sweep** (synthetic `{api,app,shop}/v{1,2,3}/{8 leaves}`, run
-`cargo run -p ferox-ml-core --example algo_bench`): the models **memorize identically
-and none generalizes across sibling directories from online learning** (100% recall
-on a seen version, 0% on held-out versions — for all four); the only separation is
-**cold start**, where seeded Markov predicts the canonical `/api/v1`+`/api/v2` tree
-with zero observations (100%) and the tree models score 0%. DynSDT remains the
+proposes extras). **Deep sweep** (synthetic `{api,app,shop}/v{1,2,3}/{8 leaves}`, 84
+resources, run `cargo run -p ferox-ml-core --example algo_bench`): list mode
+re-applies the wordlist to every directory, so an end-to-end scan reaches **100%
+coverage for all four** (Markov ~4% fewer requests — its predictions bring recursion
+forward). The predictor only changes *reach* where the wordlist falls short: trained
+on one version's branches, **none generalizes across sibling directories online**
+(100% recall on a seen version, 0% on held-out — all four), and the only separation
+is **cold start**, where seeded Markov predicts the canonical `/api/v1`+`/api/v2`
+tree with zero observations (100%) vs 0% for the tree models. DynSDT remains the
 list-mode default for its output-sensitive top-k as a directory's learned children
 grow. Full methodology and tables: [`docs/analysis/autocomplete-algorithms.md`](docs/analysis/autocomplete-algorithms.md).
 

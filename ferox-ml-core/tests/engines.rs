@@ -741,3 +741,52 @@ fn list_driven_drains_whole_pool_across_rounds() {
     drop(calls);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn list_mode_reapplies_wordlist_under_every_directory() {
+    // The wordlist must be re-applied per directory (feroxbuster-style recursion),
+    // not consumed once globally: a word scanned at the root must also be scanned
+    // under a directory the scan discovers.
+    let dir = std::env::temp_dir().join(format!("ferox-recurse-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    std::fs::write(dir.join("a.txt"), "alpha\nbeta\n").unwrap();
+
+    // root reveals /sub/ (a directory); /sub/ reveals nothing further.
+    let mut by_url = HashMap::new();
+    by_url.insert(
+        "http://t.test/".to_string(),
+        vec![resp("http://t.test/sub/", 200)], // 2xx ending in '/' => directory
+    );
+    let calls: CallLog = Rc::new(RefCell::new(Vec::new()));
+    let runner = RecordingRunner {
+        calls: Rc::clone(&calls),
+        by_url,
+    };
+    let cfg = Config {
+        list_dir: dir.to_string_lossy().into_owned(),
+        list_chunk_size: 10, // whole pool per round
+        ranker: "none".into(),
+        max_rounds: 20,
+        request_budget: 1000,
+        max_depth: 5,
+        ..Config::default()
+    };
+
+    Campaign::new(cfg, Box::new(runner)).run("http://t.test").unwrap();
+    let calls = calls.borrow();
+
+    // "alpha" must be scanned under BOTH the root arm and the discovered /sub/ arm
+    let scanned_under = |arm: &str| -> bool {
+        calls
+            .iter()
+            .any(|(u, words)| u == arm && words.iter().any(|w| w == "alpha"))
+    };
+    assert!(scanned_under("http://t.test/"), "alpha not scanned under root: {calls:?}");
+    assert!(
+        scanned_under("http://t.test/sub/"),
+        "alpha was not re-applied under the discovered /sub/ directory: {calls:?}"
+    );
+
+    drop(calls);
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -149,27 +149,35 @@ cold-start mechanism, so they rely entirely on the wordlist until they have lear
 
 | `--algo` | found | coverage | requests | rounds |
 |----------|:---:|:---:|:---:|:---:|
-| `markov` | 3 | 4% | 106 | 19 |
-| `trie`   | 3 | 4% | 90 | 19 |
-| `dynsdt` | 3 | 4% | 90 | 19 |
-| `tst`    | 3 | 4% | 90 | 19 |
+| `markov` | 84 | **100%** | 962 | 226 |
+| `trie`   | 84 | **100%** | 1006 | 247 |
+| `dynsdt` | 84 | **100%** | 1009 | 247 |
+| `tst`    | 84 | **100%** | 1006 | 247 |
 
-All four tie at the three top-level directories. This is a property of **list
-mode**, not the predictor: the wordlist pool is consumed by a single forward cursor
-that does not re-try words per directory, and online learning can't bootstrap a leaf
-it has never seen — so depth is bounded identically for every model. (Markov issues
-a few more requests from its seed but finds nothing extra here.) Reaching the deep
-leaves needs either a profile seed (non-list mode) or a wordlist re-applied per
-directory — not a different tree structure.
+List mode **re-applies the wordlist to every directory** (each arm walks the pool
+with its own cursor), so the scan fully recurses and every model reaches 100%
+coverage. The predictor no longer changes *reach* here — every leaf name is in the
+wordlist, so a per-directory walk finds them all regardless of algorithm — but it
+does change **efficiency**: Markov reaches full coverage in ~4% fewer requests,
+because its predictions surface a directory's children before the cursor walks to
+them, bringing recursion forward. (A predictor only changes *reach* for paths the
+wordlist does **not** contain — the cold-start case in B.)
+
+> Earlier this benchmark tied all models at 3 resources (4%): list mode used a single
+> global cursor that consumed each word once across all directories, so depth was
+> bounded by the mode. That was fixed — the pool is now per-directory.
 
 ### Takeaway
 
-On a deep target the **predictor choice does not change *what* the tree models
-find** — they memorize identically and none generalizes online. Two levers do
-matter: **cold-start priors** (only Markov has them → use it on cold, structured
-targets) and **query cost/memory at scale** (DynSDT's output-sensitive `O(|p| + k
-log k)` top-k → use it once a directory has accumulated many learned children). The
-best of both is `--learn` to warm a model, then scan with the algorithm whose query
+On a deep target with a wordlist that covers the leaf names, **every algorithm now
+reaches full coverage** (the per-directory walk does the work); the predictor only
+shifts **efficiency** (Markov marginally ahead here by bringing recursion forward).
+The predictor changes **reach** only where the wordlist falls short — the
+**cold-start** case, where seeded Markov predicts canonical structure no tree model
+can. And it changes **cost at scale** — DynSDT's output-sensitive `O(|p| + k log k)`
+top-k matters once a directory accumulates many learned children. Rules of thumb:
+`markov` for cold structured targets; `dynsdt` (default) once observations
+accumulate; `--learn` to warm a model, then scan with the algorithm whose query
 profile fits.
 
 ## Cross-run accumulation

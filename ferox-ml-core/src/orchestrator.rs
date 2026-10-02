@@ -36,9 +36,9 @@ use crate::scheduler;
 use crate::scope::Scope;
 use crate::tokenize::{last_segment, path_segments};
 use crate::wordlist::{
-    build_round_wordlist, load_list_dir, load_wordlist, merge_seed, ListCursor, SeenPaths,
+    build_round_wordlist, load_list_dir, load_wordlist, merge_seed, ListPool, SeenPaths,
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Everything the caller learns from a campaign.
 #[derive(Debug, Clone)]
@@ -170,16 +170,17 @@ impl Campaign {
         let mut sched = scheduler::build(&self.cfg.scheduler, self.cfg.seed);
         let mut seen = SeenPaths::new();
 
-        // list-driven scanning: a forward cursor over the merged wordlist pool, and
-        // a campaign-level set of every word already scheduled (from any source).
-        let mut cursor = if list_mode {
-            Some(ListCursor::new(
+        // list-driven scanning: the wordlist pool is re-applied to every directory
+        // (each arm has its own cursor), and `arm_tried` records the words already
+        // scheduled per arm so predictions aren't rescanned when an arm is re-served.
+        let mut pool = if list_mode {
+            Some(ListPool::new(
                 load_list_dir(&self.cfg.list_dir, 100_000).unwrap_or_default(),
             ))
         } else {
             None
         };
-        let mut tried_words: HashSet<String> = HashSet::new();
+        let mut arm_tried: HashMap<String, HashSet<String>> = HashMap::new();
         // every arm ever enqueued (root + discovered dirs), for the list-drain
         // phase that re-serves them round-robin once the bandit retires its arms.
         let mut known_arms: Vec<String> = Vec::new();
@@ -251,17 +252,29 @@ impl Campaign {
             let arm = match sched.choose() {
                 Some(a) => a,
                 None => {
-                    // list-drain: once the bandit retires its arms, keep re-serving
-                    // known arms round-robin while the list cursor still has entries,
-                    // so the whole pool drains across rounds (bounded by max_rounds /
-                    // request_budget) instead of stopping after the first chunk.
-                    let cursor_has_more = cursor.as_ref().map_or(false, |c| !c.is_exhausted());
-                    if list_mode && cursor_has_more && !known_arms.is_empty() {
-                        let a = known_arms[list_rr % known_arms.len()].clone();
-                        list_rr += 1;
-                        a
-                    } else {
-                        break;
+                    // list-drain: the scheduler gives each directory ONE round, so
+                    // re-serve known arms round-robin to re-apply the wordlist to
+                    // every directory until each has walked the whole pool (bounded
+                    // by max_rounds / request_budget). Pick the next arm that still
+                    // has pool entries left.
+                    match pool.as_ref() {
+                        Some(p) if !known_arms.is_empty() && p.any_remaining(&known_arms) => {
+                            let n = known_arms.len();
+                            let mut picked = None;
+                            for i in 0..n {
+                                let cand = &known_arms[(list_rr + i) % n];
+                                if !p.arm_exhausted(cand) {
+                                    picked = Some(cand.clone());
+                                    list_rr = (list_rr + i + 1) % n;
+                                    break;
+                                }
+                            }
+                            match picked {
+                                Some(a) => a,
+                                None => break,
+                            }
+                        }
+                        _ => break,
                     }
                 }
             };
@@ -276,16 +289,18 @@ impl Campaign {
                 words = merge_seed(&words, &seed_words, self.cfg.seed_per_round);
             }
 
-            // list fill: ML predictions first, then the next unseen list chunk,
-            // BM25-ranked against the observed corpus, bounded by remaining budget.
-            if let Some(cur) = cursor.as_mut() {
-                for w in &words {
-                    tried_words.insert(w.clone());
-                }
+            // list fill: ML predictions first, then the next chunk of THIS
+            // directory's own cursor over the full wordlist (re-applied per
+            // directory), BM25-ranked against the observed corpus, bounded by budget.
+            if let Some(pool) = pool.as_mut() {
+                let tried = arm_tried.entry(arm.clone()).or_default();
+                // drop predictions already scheduled for this arm, and record the rest
+                words.retain(|w| tried.insert(w.clone()));
                 let remaining = self.cfg.request_budget.saturating_sub(summary.requests_used);
                 let room = remaining.saturating_sub(words.len());
                 if room > 0 {
-                    let chunk = cur.next_chunk(&tried_words, self.cfg.list_chunk_size);
+                    let want = room.min(self.cfg.list_chunk_size);
+                    let chunk = pool.next_chunk(&arm, &*tried, want);
                     let ranked: Vec<String> = if self.cfg.ranker == "bm25" {
                         let pairs: Vec<(String, f64)> =
                             chunk.iter().map(|w| (w.clone(), 1.0)).collect();
@@ -294,7 +309,7 @@ impl Campaign {
                         chunk
                     };
                     for w in ranked.into_iter().take(room) {
-                        if tried_words.insert(w.clone()) {
+                        if tried.insert(w.clone()) {
                             words.push(w);
                         }
                     }
