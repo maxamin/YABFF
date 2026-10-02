@@ -174,10 +174,13 @@ impl Campaign {
         // (each arm has its own cursor), and `arm_tried` records the words already
         // scheduled per arm so predictions aren't rescanned when an arm is re-served.
         let mut pool = if list_mode {
-            let cache_dir = std::env::temp_dir().to_string_lossy().into_owned();
-            let (loaded, from_cache) =
-                load_list_dir_cached(&self.cfg.list_dir, self.cfg.list_max_entries, &cache_dir)
-                    .unwrap_or_default();
+            // the ranked-pool cache lives under state_dir (empty => caching disabled)
+            let (loaded, from_cache) = load_list_dir_cached(
+                &self.cfg.list_dir,
+                self.cfg.list_max_entries,
+                &self.cfg.state_dir,
+            )
+            .unwrap_or_default();
             eprintln!(
                 "[ml-loop] list pool loaded: {} entries (recursive, {}) from {}",
                 loaded.len(),
@@ -450,10 +453,13 @@ impl Campaign {
         // fingerprinting, no profile reporting).
         let list_mode = !self.cfg.list_dir.is_empty();
         let list_pool: Vec<String> = if list_mode {
-            let cache_dir = std::env::temp_dir().to_string_lossy().into_owned();
-            load_list_dir_cached(&self.cfg.list_dir, self.cfg.list_max_entries, &cache_dir)
-                .map(|(p, _)| p)
-                .unwrap_or_default()
+            load_list_dir_cached(
+                &self.cfg.list_dir,
+                self.cfg.list_max_entries,
+                &self.cfg.state_dir,
+            )
+            .map(|(p, _)| p)
+            .unwrap_or_default()
         } else {
             Vec::new()
         };

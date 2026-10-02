@@ -136,11 +136,12 @@ Signal ranking turns the 0-in-50k result into 16 hits in ~5k requests and full
 
 ### 3c. The ranked pool is cached
 
-Ranking 4.4M entries is a ~3-minute cost, so the result is **cached to disk** (in the
-OS temp dir) keyed by the directory and a signature of its files (count + size +
-mtime). The next run reads the ranked pool back directly and skips the walk/ranking;
-the cache is rebuilt automatically whenever the tree changes. Measured on the full
-`Discovery/Web-Content`:
+Ranking 4.4M entries is a ~3-minute cost, so the result is **cached to disk** under
+`state_dir` (`.feroxml` by default — gitignored and project-local, not OS temp) keyed
+by the directory and a signature of its files (count + size + mtime). The next run
+reads the ranked pool back directly and skips the walk/ranking; the cache is rebuilt
+automatically whenever the tree changes, and an empty `state_dir` disables it.
+Measured on the full `Discovery/Web-Content`:
 
 | load | what it does | time |
 |---|---|---|

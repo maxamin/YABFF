@@ -590,6 +590,7 @@ fn list_driven_campaign_scans_lists_and_predicts_first() {
 
     let cfg = Config {
         list_dir: dir.to_string_lossy().into_owned(),
+        state_dir: String::new(), // disable the ranked-pool cache in tests (no litter)
         list_chunk_size: 2,
         ranker: "none".into(), // keep list order deterministic (no bm25 reorder)
         max_rounds: 10,
@@ -660,6 +661,7 @@ fn list_mode_persists_a_dynsdt_model_that_accumulates_across_runs() {
     );
     let cfg = Config {
         list_dir: dir.to_string_lossy().into_owned(),
+        state_dir: String::new(), // disable the ranked-pool cache in tests (no litter)
         list_chunk_size: 4,
         ranker: "none".into(),
         max_rounds: 10,
@@ -715,6 +717,7 @@ fn list_driven_drains_whole_pool_across_rounds() {
     };
     let cfg = Config {
         list_dir: dir.to_string_lossy().into_owned(),
+        state_dir: String::new(), // disable the ranked-pool cache in tests (no litter)
         list_chunk_size: 2, // 6-word pool / 2 = 3 rounds
         ranker: "none".into(),
         max_rounds: 50,
@@ -764,6 +767,7 @@ fn list_mode_reapplies_wordlist_under_every_directory() {
     };
     let cfg = Config {
         list_dir: dir.to_string_lossy().into_owned(),
+        state_dir: String::new(), // disable the ranked-pool cache in tests (no litter)
         list_chunk_size: 10, // whole pool per round
         ranker: "none".into(),
         max_rounds: 20,

@@ -882,7 +882,8 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
         top_n: config.ml_predictions,
         model_path: config.ml_model.clone(),
         extensions: config.extensions.clone(),
-        state_dir: std::env::temp_dir().to_string_lossy().into_owned(),
+        // state_dir defaults to ".feroxml" (MlConfig::default) — holds the ranked
+        // list-pool cache; persistent and project-local rather than OS temp.
         list_dir: config.ml_list_dir.clone(),
         list_chunk_size: config.ml_list_chunk,
         list_max_entries: config.ml_list_max,

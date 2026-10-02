@@ -166,14 +166,19 @@ fn cache_file(cache_dir: &str, dir: &str) -> std::path::PathBuf {
 /// directly — skipping the recursive walk and document-frequency ranking (the
 /// expensive part for a multi-million-entry tree like full SecLists). On a **miss**
 /// (no cache, or the tree changed) it ranks fresh and writes the cache (best-effort;
-/// a read-only `cache_dir` simply means no speed-up). The cache file's first line is
-/// the signature; the rest are the ranked entries. Returns `(pool, from_cache)`.
+/// a read-only `cache_dir` simply means no speed-up). An **empty `cache_dir` disables
+/// caching** entirely (rank fresh, write nothing). The cache file's first line is the
+/// signature; the rest are the ranked entries. Returns `(pool, from_cache)`.
 pub fn load_list_dir_cached(
     dir: &str,
     cap: usize,
     cache_dir: &str,
 ) -> std::io::Result<(Vec<String>, bool)> {
     let files = collect_files(dir);
+    // an empty cache_dir disables caching (rank fresh every time, write nothing)
+    if cache_dir.is_empty() {
+        return Ok((capped(rank_entries(&files), cap), false));
+    }
     let sig = tree_signature(&files);
     let cache = cache_file(cache_dir, dir);
 
