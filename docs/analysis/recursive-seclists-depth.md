@@ -1,15 +1,16 @@
 # Full recursive SecLists at unlimited depth — benchmark
 
 List mode (`--ml-loop --ml-list-dir <dir>`) loads a wordlist directory **recursively**
-(the whole tree) and **re-applies it to every directory the scan discovers**, to the
-recursion depth set by `--depth` (`0` = unlimited — feroxbuster's own convention).
-This note benchmarks that against the real SecLists tree and a lab.
+(the whole tree) and **re-applies it to every directory the scan discovers**. It
+**defaults to unlimited recursion depth** and loads **every entry** in the tree; pass
+`--depth N` / `--ml-list-max N` to bound it. This note benchmarks that against the
+real SecLists tree and a lab.
 
 ```bash
+# list mode defaults: unlimited depth + every entry in the (recursive) tree
 feroxbuster --ml-loop --ml-list-dir /usr/share/seclists/Discovery/Web-Content \
-            --ml-list-max 0 --depth 0 --ml-algo dynsdt \
-            --ml-model ./model.json -u http://TARGET
-# --ml-list-max 0 = every entry in the tree · --depth 0 = unlimited recursion
+            --ml-algo dynsdt --ml-model ./model.json -u http://TARGET
+# bound it: --depth 4 (or --depth 0 for explicit unlimited) · --ml-list-max 200000
 ```
 
 ## 1. Ingest — the loader reads the whole tree
@@ -26,11 +27,19 @@ comments/blank lines, and de-duplicates:
 Every entry in the directory tree is usable; `--ml-list-max N` caps it when memory
 or time is tight (the full load is ~4.4M strings in memory).
 
-## 2. Unlimited depth is correct and terminates on a finite target
+## 2. Unlimited depth (the default) is correct and terminates on a finite target
 
-Against a finite directory tree, `--depth 0` recurses to the bottom and **stops**
-— 404s never become directories, and `SeenPaths` + soft-404 filtering keep it from
-looping. A recursive wordlist tree (files nested in sub-folders) at `--depth 0`:
+Against a finite directory tree, the default unlimited recursion recurses to the
+bottom and **stops** — 404s never become directories, and `SeenPaths` + soft-404
+filtering keep it from looping. A recursive wordlist tree (files nested in
+sub-folders), list-mode default depth (unlimited), vs. an explicit `--depth 2`:
+
+| run | deepest found | resources |
+|---|---|---|
+| list-mode default (unlimited) | depth 3 (tree bottom) | 15 |
+| `--depth 2` (bounded) | depth 2 | 9 |
+
+Unlimited reaches the tree's bottom; `--depth N` bounds it. Full run at the default: 
 
 | metric | value |
 |---|---|
@@ -76,8 +85,9 @@ tree above every hit was reached this way (`predicted hits = 15`). Prediction ch
 ## Takeaway
 
 - **Capability:** the whole SecLists tree (4.4M entries) loads recursively and is
-  re-applied to every directory to any depth — `--depth 0` for unlimited.
+  re-applied to every directory to any depth — **unlimited is the list-mode default**.
 - **Safety:** unlimited depth terminates on finite sites; it's the catch-all case and
   sheer scale that need bounding.
-- **Practice:** `--depth 4` (default) for routine runs; `--depth 0 --ml-list-max 0`
-  for an exhaustive background sweep you bound by time/`--scan-limit`.
+- **Practice:** the default (unlimited depth, every entry) is an exhaustive background
+  sweep — bound it with `--depth N` and/or `--ml-list-max N` (and `--scan-limit` /
+  time) for routine runs.

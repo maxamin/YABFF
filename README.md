@@ -289,20 +289,22 @@ feroxbuster --ml-model ./model.json -u https://target.test -w common.txt
 feroxbuster --ml-loop --ml-list-dir ./lists --ml-algo dynsdt \
             --ml-model ./model.json -u https://target.test
 
-# full SecLists, recursively, re-applied to every directory to depth 4
+# full SecLists, recursively, re-applied to every directory — UNLIMITED depth
 feroxbuster --ml-loop --ml-list-dir /usr/share/seclists/Discovery/Web-Content \
-            --depth 4 --ml-algo dynsdt --ml-model ./model.json -u https://target.test
-# (--depth 0 = unlimited recursion; --ml-list-max 0 = every entry in the tree)
+            --ml-algo dynsdt --ml-model ./model.json -u https://target.test
+# (list mode defaults to unlimited depth & every entry; bound with --depth N / --ml-list-max N)
 ```
 
 In list mode the wordlist directory is loaded **recursively** (the whole tree, e.g.
 all of SecLists `Discovery/Web-Content` and its sub-folders) and **re-applied to
 every directory the scan discovers**, like feroxbuster's own recursion: each found
 endpoint is fuzzed with the full list, and after each hit the model predicts likely
-sibling paths and tries those first before continuing the list. Recursion follows
-`--depth` (`0` = unlimited), and list mode lifts the round/request caps so the scan
-runs until the directory tree and the lists are fully consumed (bound it with
-`--depth`, `--scan-limit`, or Ctrl-C).
+sibling paths and tries those first before continuing the list. **List mode defaults
+to unlimited recursion depth** (the whole directory tree) and lifts the round/request
+caps, so the scan runs until the tree and the lists are fully consumed — bound it
+with `--depth N`, `--ml-list-max N`, `--scan-limit`, or Ctrl-C. soft-404 filtering and
+per-path de-duplication guard against catch-all runaway, but depth is the primary
+bound.
 
 | Flag | Meaning (default) |
 |---|---|
@@ -312,7 +314,7 @@ runs until the directory tree and the lists are fully consumed (bound it with
 | `--ml-list-dir <dir>` | Directory of wordlists (loaded **recursively**) driving `--ml-loop` (list mode; skips fingerprinting). |
 | `--ml-list-chunk <n>` | List entries injected per directory per round in list mode (`200`). |
 | `--ml-list-max <n>` | Cap on entries loaded from the tree; `0` = unlimited — every entry (default). |
-| `--depth <n>` | Recursion depth for list mode (`4`; `0` = unlimited). |
+| `--depth <n>` | Recursion depth. List mode defaults to **unlimited**; pass `--depth N` to bound it (`0` = unlimited explicitly). Non-list mode keeps feroxbuster's default `4`. |
 | `--ml-model <path>` | Load + update a learned model; written back on exit. Implies `--ml`. |
 | `--ml-order <n>` | Max Markov order / PPM back-off depth (`3`; only for `--ml-algo markov`). |
 | `--ml-predictions <n>` | Base predictions injected per directory (`25`; bandit scales 25–100 %). |
@@ -396,10 +398,11 @@ The ML path is measured, not asserted — all three are reproducible and documen
   why it is the list-mode default.
 - **Full recursive SecLists at unlimited depth** — [`docs/analysis/recursive-seclists-depth.md`](docs/analysis/recursive-seclists-depth.md).
   The loader ingests the whole `Discovery/Web-Content` tree (**4,409,677 entries**,
-  386 files) and re-applies it to every directory; `--depth 0` recurses to the
-  bottom and terminates on finite sites (15 resources to depth 3, clean), while the
-  full tree × unlimited depth is a comprehensive background scan to bound with
-  `--depth` / `--scan-limit`.
+  386 files) and re-applies it to every directory; list mode **defaults to unlimited
+  depth**, which recurses to the bottom and terminates on finite sites (15 resources
+  to depth 3, clean; `--depth 2` → depth 2, 9), while the full tree × unlimited depth
+  is a comprehensive background scan to bound with `--depth N` / `--ml-list-max N` /
+  `--scan-limit`.
 - **Classifier benchmark** — [`docs/analysis/fingerprint-classifier-benchmark.md`](docs/analysis/fingerprint-classifier-benchmark.md)
   + an HTML confusion-matrix heatmap [`fingerprint-classifier-heatmap.html`](docs/analysis/fingerprint-classifier-heatmap.html).
   Eight classifiers (hand centroids, Naive Bayes, logistic regression, k-NN, SVM,

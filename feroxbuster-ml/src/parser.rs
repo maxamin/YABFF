@@ -698,7 +698,7 @@ pub fn initialize() -> Command {
                 .value_name("DIR")
                 .num_args(1)
                 .help_heading("Scan settings")
-                .help("Directory of wordlists to drive --ml-loop (skips fingerprinting; learns structure from results). Supersedes -w")
+                .help("Directory of wordlists (loaded recursively) to drive --ml-loop (skips fingerprinting; learns structure from results). Re-applied to every discovered directory; defaults to UNLIMITED recursion depth — pass --depth N to bound it. Supersedes -w")
         ).arg(
             Arg::new("ml_list_chunk")
                 .long("ml-list-chunk")

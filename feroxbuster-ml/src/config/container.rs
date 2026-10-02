@@ -256,6 +256,11 @@ pub struct Configuration {
     #[serde(default = "depth")]
     pub depth: usize,
 
+    /// runtime-only: whether --depth was given on the command line (so --ml-loop
+    /// list mode can default to unlimited depth unless the user bounded it)
+    #[serde(skip)]
+    pub depth_set_by_user: bool,
+
     /// Number of concurrent scans permitted; a limit of 0 means no limit is imposed
     #[serde(default)]
     pub scan_limit: usize,
@@ -531,6 +536,7 @@ impl Default for Configuration {
             filter_similar: Vec::new(),
             headers: HashMap::new(),
             depth: depth(),
+            depth_set_by_user: false,
             threads: threads(),
             wordlist: wordlist(),
             dont_collect: ignored_extensions(),
@@ -745,6 +751,9 @@ impl Configuration {
         update_config_with_num_type_if_present!(&mut config.threads, args, "threads", usize);
         update_config_with_num_type_if_present!(&mut config.parallel, args, "parallel", usize);
         update_config_with_num_type_if_present!(&mut config.depth, args, "depth", usize);
+        if came_from_cli!(args, "depth") {
+            config.depth_set_by_user = true;
+        }
         update_config_with_num_type_if_present!(&mut config.scan_limit, args, "scan_limit", usize);
         update_config_with_num_type_if_present!(&mut config.rate_limit, args, "rate_limit", usize);
         update_config_with_num_type_if_present!(&mut config.limit_bars, args, "limit_bars", usize);
@@ -1535,6 +1544,10 @@ impl Configuration {
         update_if_not_default!(&mut conf.random_agent, new.random_agent, false);
         update_if_not_default!(&mut conf.threads, new.threads, threads());
         update_if_not_default!(&mut conf.depth, new.depth, depth());
+        // carry the runtime provenance flag from the CLI config into the merged one
+        if new.depth_set_by_user {
+            conf.depth_set_by_user = true;
+        }
         update_if_not_default!(&mut conf.wordlist, new.wordlist, wordlist());
         update_if_not_default!(&mut conf.status_codes, new.status_codes, status_codes());
         // status_codes() is the default for replay_codes, if they're not provided

@@ -81,7 +81,7 @@ _feroxbuster() {
 '--ml-order=[Maximum Markov order for the ML predictor (default\: 3)]:ORDER:_default' \
 '--ml-predictions=[Number of ML-predicted paths injected per directory (default\: 25)]:COUNT:_default' \
 '--ml-scheduler=[Bandit that scales per-directory prediction budget (default\: thompson)]:SCHEDULER:(thompson ucb1 round_robin)' \
-'--ml-list-dir=[Directory of wordlists to drive --ml-loop (skips fingerprinting; learns structure from results). Supersedes -w]:DIR:_files -/' \
+'--ml-list-dir=[Directory of wordlists (loaded recursively) to drive --ml-loop (skips fingerprinting; learns structure from results). Re-applied to every discovered directory; defaults to UNLIMITED recursion depth — pass --depth N to bound it. Supersedes -w]:DIR:_files -/' \
 '--ml-list-chunk=[List entries to inject per round when --ml-list-dir is set (default\: 200)]:COUNT:_default' \
 '--ml-list-max=[Cap on entries loaded from --ml-list-dir (whole tree, recursive); 0 = unlimited (default), use every entry]:COUNT:_default' \
 '--ml-algo=[Prediction algorithm for --ml-loop\: auto (default; dynsdt in list mode, markov otherwise) | markov | trie | dynsdt | tst. Profile-match rule\: markov carries cold-start profile seeds (best when the target matches a shipped profile, e.g. WordPress/REST); dynsdt/trie learn only from observations (best off-profile, list-driven, or once a model is warmed via --ml-model)]:ALGO:(auto markov trie dynsdt tst)' \

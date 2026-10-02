@@ -896,8 +896,12 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
         // Re-apply the whole (recursively loaded) wordlist tree to every discovered
         // directory, to the recursion depth, until the tree and the lists are fully
         // consumed — so don't let the default round/request caps cut a deep scan
-        // short. Depth (--depth, 0 = unlimited) and soft-404 filtering bound it;
-        // use --scan-limit or Ctrl-C to stop a very large run.
+        // short. List mode DEFAULTS to unlimited depth (the whole directory tree);
+        // pass --depth N to bound it. soft-404 filtering + per-path de-dup guard
+        // against catch-all runaway; use --scan-limit / Ctrl-C to stop a large run.
+        if !config.depth_set_by_user {
+            cfg.max_depth = usize::MAX; // unlimited unless the user bounded --depth
+        }
         cfg.request_budget = usize::MAX;
         cfg.max_rounds = usize::MAX;
         if !config.wordlist.is_empty() {
