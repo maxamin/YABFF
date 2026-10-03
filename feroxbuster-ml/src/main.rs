@@ -34,7 +34,7 @@ use feroxbuster::{
     progress::PROGRESS_PRINTER,
     scan_manager::{self, ScanType},
     scanner,
-    utils::{fmt_err, slugify_filename},
+    utils::{fmt_err, open_file, slugify_filename},
     SECONDARY_WORDLIST,
 };
 #[cfg(not(target_os = "windows"))]
@@ -959,6 +959,17 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
     // (state_dir) are shared across targets, so learning accumulates down the list
     // and only the first target pays the list-ranking cost. A failing target is
     // logged and the sweep continues.
+    // --output routing: the in-process ml-loop runner bypasses feroxbuster's
+    // normal output handler, so discovered resources never reached --output.
+    // Open it here (append/create) and write each target's hits as it finishes,
+    // so a long multi-target sweep persists results incrementally and keeps what
+    // it found if the run is interrupted. Honors --json (NDJSON) vs plaintext.
+    let mut out_file = if config.output.is_empty() {
+        None
+    } else {
+        Some(open_file(&config.output)?)
+    };
+
     let multi = targets.len() > 1;
     let mut scanned = 0usize;
     let mut total_found = 0usize;
@@ -992,6 +1003,36 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
                 println!("out-of-scope drop: {}", summary.dropped_out_of_scope);
                 for (url, status) in &summary.discovered {
                     println!("  {status} {url}");
+                }
+
+                // mirror the discovered resources into --output, if set
+                if let Some(file) = out_file.as_mut() {
+                    use std::io::Write;
+                    for (url, status) in &summary.discovered {
+                        let line = if config.json {
+                            let path = url::Url::parse(url)
+                                .map(|u| u.path().to_string())
+                                .unwrap_or_default();
+                            format!(
+                                "{}\n",
+                                serde_json::json!({
+                                    "type": "response",
+                                    "url": url,
+                                    "path": path,
+                                    "status": status,
+                                })
+                            )
+                        } else {
+                            format!("{status} {url}\n")
+                        };
+                        if let Err(e) = file.write_all(line.as_bytes()) {
+                            log::warn!("ml-loop: could not write to {}: {e}", config.output);
+                            break;
+                        }
+                    }
+                    // flush per target so results aren't stuck in the buffer if
+                    // the run is interrupted before the next target completes
+                    let _ = file.flush();
                 }
             }
             Err(e) => eprintln!("[ml-loop] target {target} failed: {e}"),
