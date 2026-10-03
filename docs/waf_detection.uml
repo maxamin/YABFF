@@ -1,0 +1,392 @@
+'=============================================================================
+' WAF-flagging detector — design model (PlantUML)
+'
+' Proposed new module:  ferox-ml-core/src/waf.rs  (pub mod waf)
+' Status: DESIGN ONLY — no code applied. This file is the blueprint.
+'
+' Goal: detect, as generically and effectively as possible, when a target's
+' edge/WAF has started FLAGGING our traffic (blocking, rate-limiting,
+' tarpitting, serving canned challenge/deny pages) so the scan can react
+' (throttle / back off / recalibrate / bail) instead of burning budget on
+' poisoned results — exactly the failure mode seen when a run turned into a
+' wall of 403s from a CDN edge.
+'
+' Design pillars
+'   GENERIC    - a vendor-AGNOSTIC statistical core (works on any target, even
+'                unknown/custom WAFs) + an OPTIONAL, data-driven vendor layer
+'                for attribution. Self-calibrating baseline => no magic
+'                constants tuned to one site. No network I/O in the core, so it
+'                is deterministic and unit-testable. Reuses the existing
+'                dedup::Signature + simhash instead of inventing fingerprints.
+'   EFFECTIVE  - fuses several weak, independent signals into one confidence
+'                score (cuts false positives AND false negatives); a hysteretic,
+'                min-dwell state machine stops flapping; vendor attribution lets
+'                the caller pick a targeted reaction (e.g. honor Retry-After).
+'=============================================================================
+
+@startuml waf_detection_classes
+title WAF-flagging detector — class model (ferox-ml-core::waf)
+
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+hide empty members
+
+'------------------------------------------------------------------ inputs
+package "existing crate types (reused, not redefined)" <<Frame>> {
+  class FeroxResponse <<ferox>> {
+    +url : String
+    +status : u16
+    +content_length : u64
+    +word_count : u64
+    +line_count : u64
+    +headers : HashMap<String,String>
+  }
+  class Signature <<dedup>> {
+    +status : u16
+    +len_bucket : u64
+    +words : u64
+    +lines : u64
+  }
+  note bottom of Signature
+    dedup::simhash() + dedup::Signature are reused as the
+    cheap "response fingerprint". The detector adds no new
+    body-hashing machinery.
+  end note
+}
+
+enum TransportOutcome {
+  Ok
+  Timeout
+  ConnReset
+  TlsHandshakeError
+  DnsFailure
+  ProtocolError
+}
+
+class Observation {
+  +response : Option<FeroxResponse>
+  +elapsed_ms : u64
+  +transport : TransportOutcome
+  +request_path : String
+  --
+  .. built by the caller per request ..
+}
+Observation --> "0..1" FeroxResponse
+Observation --> TransportOutcome
+
+'------------------------------------------------------------------ core state
+class RollingStat {
+  -alpha : f64
+  -mean : f64
+  -var : f64
+  -n : u64
+  +observe(x : f64)
+  +zscore(x : f64) : f64
+  +mean() : f64
+}
+
+class Baseline {
+  +calibrated : bool
+  +samples : u64
+  +nominal_block_rate : f64
+  +nominal_latency_ms : f64
+  +dominant_ok_sig : Option<Signature>
+  +capture(win : &Window)
+  +is_warm(cfg : &DetectorConfig) : bool
+}
+note right of Baseline
+  Captured only while state == Clear (warm-up). This is what
+  makes the detector GENERIC: "normal" is learned per target,
+  so a site that naturally 403s a lot does not self-trigger.
+end note
+
+class Window {
+  -capacity : usize
+  -buf : VecDeque<Observation>
+  +block_rate : RollingStat
+  +latency : RollingStat
+  +baseline : Baseline
+  -sig_counts : HashMap<Signature,u32>
+  -distinct_paths : u32
+  +push(obs : Observation)
+  +recent(n : usize) : &[Observation]
+  +fingerprint_convergence() : f64
+  +block_class_rate() : f64
+}
+Window *-- RollingStat
+Window *-- Baseline
+Window o-- "0..N" Observation
+Window ..> Signature : keys sig_counts
+
+'------------------------------------------------------------------ signals
+interface Signal <<trait>> {
+  +name() : &'static str
+  +weight() : f64
+  +evaluate(win : &Window) : SignalScore
+  +reset()
+}
+note top of Signal
+  Each Signal is a weak, INDEPENDENT detector returning a
+  normalized score in [0,1] plus human-readable evidence.
+  Add a new WAF behaviour by adding one Signal impl — the
+  aggregator and state machine never change.
+end note
+
+class SignalScore {
+  +value : f64   ' 0..1 strength
+  +confidence : f64
+  +evidence : String
+}
+
+class StatusRegimeSignal {
+  .. burst of 4xx/5xx block-class codes vs calibrated baseline ..
+  +evaluate(win) : SignalScore
+}
+class BlockTemplateSignal {
+  .. many DISTINCT requests collapsing onto one response ..
+  .. fingerprint (Signature/simhash convergence) => canned page ..
+  +radius : u32
+  +evaluate(win) : SignalScore
+}
+class RateLimitSignal {
+  .. 429/503 + Retry-After / RateLimit-* / Cf-Mitigated headers ..
+  +evaluate(win) : SignalScore
+}
+class LatencySignal {
+  .. EWMA z-score: tarpit (slow) or instant canned deny (fast) ..
+  +evaluate(win) : SignalScore
+}
+class TransportSignal {
+  .. spike in resets/timeouts/TLS drops = connection-level block ..
+  +evaluate(win) : SignalScore
+}
+class VendorFingerprintSignal {
+  .. strong score + attribution from VendorTable match ..
+  -table : VendorTable
+  +evaluate(win) : SignalScore
+}
+Signal <|.. StatusRegimeSignal
+Signal <|.. BlockTemplateSignal
+Signal <|.. RateLimitSignal
+Signal <|.. LatencySignal
+Signal <|.. TransportSignal
+Signal <|.. VendorFingerprintSignal
+Signal ..> SignalScore
+BlockTemplateSignal ..> Signature : counts convergence
+
+'------------------------------------------------------------------ vendor layer (data-driven, optional)
+class VendorTable {
+  -prints : Vec<VendorFingerprint>
+  +builtin() : VendorTable
+  +from_toml(path) : VendorTable
+  +match(resp : &FeroxResponse) : Option<(WafVendor,f64)>
+}
+class VendorFingerprint {
+  +vendor : WafVendor
+  +header_keys : Vec<String>
+  +cookie_prefixes : Vec<String>
+  +body_markers : Vec<Regex>
+  +status_hints : Vec<u16>
+}
+enum WafVendor {
+  Cloudflare
+  Akamai
+  AwsWafShield
+  Imperva
+  Sucuri
+  F5BigIp
+  ModSecurity
+  Fastly
+  Generic
+  Unknown
+}
+VendorTable o-- "0..N" VendorFingerprint
+VendorFingerprint --> WafVendor
+VendorFingerprintSignal --> VendorTable
+
+'------------------------------------------------------------------ decision
+enum WafState {
+  Clear
+  Suspected
+  Flagged
+  Blocked
+}
+enum Reaction {
+  Continue
+  Throttle_factor
+  Backoff_for_ms
+  Recalibrate
+  Bail
+}
+note right of Reaction
+  Throttle(factor:f64), Backoff{for_ms:u64} carry payloads.
+  The caller maps these onto existing controls (see bridge).
+end note
+
+class SignalEvidence {
+  +signal : &'static str
+  +score : f64
+  +detail : String
+}
+class WafVerdict {
+  +state : WafState
+  +confidence : f64
+  +vendor : Option<WafVendor>
+  +fired : Vec<SignalEvidence>
+  +recommendation : Reaction
+}
+WafVerdict --> WafState
+WafVerdict --> Reaction
+WafVerdict --> "0..1" WafVendor
+WafVerdict o-- "0..N" SignalEvidence
+
+class DetectorConfig {
+  +window_size : usize
+  +warmup_samples : usize
+  +weights : SignalWeights
+  +enter_suspected : f64
+  +enter_flagged : f64
+  +enter_blocked : f64
+  +exit_hysteresis : f64   ' gap below enter-threshold to leave a state
+  +min_dwell : usize       ' observations before a transition may reverse
+  +simhash_radius : u32
+  +default() : DetectorConfig
+}
+class SignalWeights {
+  +status : f64
+  +template : f64
+  +rate_limit : f64
+  +latency : f64
+  +transport : f64
+  +vendor : f64
+}
+DetectorConfig *-- SignalWeights
+
+'------------------------------------------------------------------ facade
+class WafDetector <<facade>> {
+  -cfg : DetectorConfig
+  -window : Window
+  -signals : Vec<Box<dyn Signal>>
+  -vendors : VendorTable
+  -state : WafState
+  -confidence : f64
+  -dwell : usize
+  -last : WafVerdict
+  --
+  +new(cfg : DetectorConfig) : WafDetector
+  +observe(obs : Observation) : &WafVerdict
+  +verdict() : &WafVerdict
+  +recalibrate()
+  -fuse() : (f64, Vec<SignalEvidence>)   ' weighted score + evidence
+  -step_state(score : f64)               ' hysteresis + min_dwell
+  -reaction_for(state) : Reaction
+}
+WafDetector *-- DetectorConfig
+WafDetector *-- Window
+WafDetector *-- "1..N" Signal
+WafDetector *-- VendorTable
+WafDetector --> WafVerdict : produces
+WafDetector ..> Observation : consumes
+
+'------------------------------------------------------------------ integration (no changes applied; shown for context)
+class MlLoopWafBridge <<adapter>> {
+  .. translates a WafVerdict.recommendation into controls the ..
+  .. orchestrator / feroxbuster already own ..
+  +apply(v : &WafVerdict) : PolicyDelta
+}
+enum RequesterPolicy <<feroxbuster>> {
+  AutoTune
+  AutoBail
+  Default
+}
+MlLoopWafBridge ..> WafVerdict
+MlLoopWafBridge ..> RequesterPolicy
+note bottom of MlLoopWafBridge
+  Reaction  ->  existing control
+  --------------------------------------------
+  Continue      -> no change
+  Throttle(f)   -> lower concurrency / rate_limit (AutoTune-like)
+  Backoff(ms)   -> sleep arm, honor Retry-After
+  Recalibrate   -> drop learned soft-404 baseline + re-probe
+  Bail          -> stop this target (AutoBail), continue the sweep
+  The detector only RECOMMENDS; the caller decides. Keeps the
+  module side-effect free and reusable (CLI scan, ml-loop, tests).
+end note
+
+@enduml
+
+
+@startuml waf_detection_state
+title WAF-flagging detector — decision state machine
+
+skinparam shadowing false
+[*] --> Clear
+
+state Clear {
+  Clear : capture/refresh Baseline (warm-up)
+  Clear : recommendation = Continue
+}
+state Suspected {
+  Suspected : one weak signal elevated
+  Suspected : recommendation = Throttle(0.5)
+}
+state Flagged {
+  Flagged : fused confidence sustained high
+  Flagged : recommendation = Backoff(Retry-After | expo)
+}
+state Blocked {
+  Blocked : near-total block / hard deny / transport kill
+  Blocked : recommendation = Bail (this target)
+}
+
+Clear --> Suspected : fused >= enter_suspected
+Suspected --> Flagged : fused >= enter_flagged\n(held >= min_dwell)
+Flagged --> Blocked : fused >= enter_blocked\nOR block_rate ~ 1.0
+Suspected --> Clear : fused <= enter_suspected - exit_hysteresis\n(held >= min_dwell)
+Flagged --> Suspected : fused <= enter_flagged - exit_hysteresis
+Blocked --> Flagged : recovery after Backoff\n(fused drops)
+
+note right of Blocked
+  Hysteresis (exit_hysteresis) + min_dwell prevent flapping
+  between states on noisy single-sample spikes. Recovery is
+  always one step at a time, never Blocked->Clear directly.
+end note
+
+Flagged --> Flagged : sustained Clear window => Recalibrate\n(baseline may be stale)
+@enduml
+
+
+@startuml waf_detection_sequence
+title WAF-flagging detector — per-request flow inside the ml-loop round
+
+skinparam shadowing false
+actor "ml-loop round" as Loop
+participant "FeroxRunner" as Runner
+participant "WafDetector" as Det
+participant "Window+Signals" as Sig
+participant "MlLoopWafBridge" as Bridge
+participant "Scheduler / Budget" as Ctl
+
+Loop -> Runner : run(arm, words)
+Runner --> Loop : Vec<FeroxResponse> (+timing / transport)
+
+loop for each response / outcome
+  Loop -> Det : observe(Observation)
+  Det -> Sig : push(obs); evaluate all Signals
+  Sig --> Det : [SignalScore...]
+  Det -> Det : fuse() -> confidence + evidence
+  Det -> Det : step_state() (hysteresis, min_dwell)
+  Det --> Loop : &WafVerdict {state, confidence, vendor, reaction}
+end
+
+alt verdict.state == Clear
+  Loop -> Ctl : proceed normally
+else Suspected / Flagged
+  Loop -> Bridge : apply(verdict)
+  Bridge -> Ctl : Throttle / Backoff (honor Retry-After)
+  note right of Ctl : results during Flagged are\nquarantined from reward/learning
+else Blocked
+  Loop -> Bridge : apply(verdict)
+  Bridge -> Ctl : Bail this target; sweep continues
+end
+@enduml
