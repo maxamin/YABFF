@@ -460,7 +460,9 @@ impl WafBanDetector {
             BanState::RateLimited => WafReaction::Backoff { retry_after },
             BanState::Throttled => match self.policy {
                 RequesterPolicy::AutoTune => WafReaction::Tune,
-                RequesterPolicy::AutoBail => WafReaction::Bail,
+                // AutoBail abandons a target only on a confirmed ban, not a mild
+                // or transient trigger — back off and keep scanning instead.
+                RequesterPolicy::AutoBail => WafReaction::Backoff { retry_after },
                 RequesterPolicy::Default => WafReaction::Continue,
             },
             BanState::Banned => match self.policy {
@@ -600,6 +602,23 @@ mod tests {
         let v = d.classify(&BanSignals::new(100, 0, 0, 30), Some(PolicyTrigger::Errors));
         assert_eq!(v.state, BanState::Throttled);
         assert_eq!(v.recommendation, WafReaction::Tune);
+    }
+
+    #[test]
+    fn autobail_backs_off_on_transient_but_bails_on_ban() {
+        let mut d = WafBanDetector::new(RequesterPolicy::AutoBail);
+        // transient 429 (not a ban): back off, don't abandon the target
+        let v = d.classify(&BanSignals::new(100, 0, 40, 0), Some(PolicyTrigger::Status429));
+        assert_eq!(v.state, BanState::RateLimited);
+        assert_eq!(v.recommendation, WafReaction::Backoff { retry_after: None });
+        // a mild 403 rate (sub-wall) under AutoBail also just backs off, not bail
+        let v = d.classify(&BanSignals::new(100, 10, 0, 0), Some(PolicyTrigger::Status403));
+        assert_eq!(v.state, BanState::Throttled);
+        assert!(matches!(v.recommendation, WafReaction::Backoff { .. }));
+        // but a 403 wall is a ban -> bail
+        let v = d.classify(&BanSignals::new(100, 95, 0, 0), Some(PolicyTrigger::Status403));
+        assert_eq!(v.state, BanState::Bailed);
+        assert_eq!(v.recommendation, WafReaction::Bail);
     }
 
     #[test]

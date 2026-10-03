@@ -230,42 +230,84 @@ impl Requester {
         None
     }
 
-    /// Classify the current enforcement event as transient throttling vs a
-    /// sustained WAF ban, and log it. Observability layer only: the existing
-    /// tune()/bail() dispatch is unchanged. This reuses the trigger that
-    /// should_enforce_policy() already produced plus the scan's own tallies, so
-    /// it adds no extra requests or counters — just the ban/vendor judgement and
-    /// an explainable reason string.
-    fn note_waf(&self, trigger: PolicyTrigger) {
-        if let Ok(mut detector) = self.waf.lock() {
-            let retry_after = detector.last_retry_after();
-            let signals = BanSignals::from_scan(&self.ferox_scan).with_retry_after(retry_after);
-            let verdict = detector.classify(&signals, Some(trigger));
+    /// Classify the fired trigger as transient throttling vs a sustained WAF
+    /// ban, attribute a vendor, log an explainable verdict, and return what the
+    /// dispatch needs to drive its reaction: `(is_ban, retry_after)`. Reuses the
+    /// trigger `should_enforce_policy()` already produced plus the scan's own
+    /// tallies — no extra requests or counters.
+    fn classify_waf(&self, trigger: PolicyTrigger) -> (bool, Option<u64>) {
+        let Ok(mut detector) = self.waf.lock() else {
+            // poisoned lock: fall back to the policy's blunt default so we never
+            // get stuck — AutoBail treats it as a ban, others as transient.
+            return (
+                self.policy_data.policy == RequesterPolicy::AutoBail,
+                None,
+            );
+        };
 
-            if matches!(verdict.state, BanState::Banned | BanState::Bailed)
-                || verdict.confidence >= 0.5
-            {
-                let vendor = verdict
-                    .vendor
-                    .map(|v| format!(" [{}]", v.name()))
-                    .unwrap_or_default();
-                log::warn!(
-                    "waf: {:?} (confidence {:.2}){} on {} — {}",
-                    verdict.state,
-                    verdict.confidence,
-                    vendor,
-                    self.target_url,
-                    verdict.evidence.join("; "),
-                );
-            } else {
-                log::debug!(
-                    "waf: {:?} (confidence {:.2}) on {}",
-                    verdict.state,
-                    verdict.confidence,
-                    self.target_url
-                );
+        let retry_after = detector.last_retry_after();
+        let signals = BanSignals::from_scan(&self.ferox_scan).with_retry_after(retry_after);
+        let verdict = detector.classify(&signals, Some(trigger));
+        let is_ban = matches!(verdict.state, BanState::Banned | BanState::Bailed);
+
+        if is_ban || verdict.confidence >= 0.5 {
+            let vendor = verdict
+                .vendor
+                .map(|v| format!(" [{}]", v.name()))
+                .unwrap_or_default();
+            log::warn!(
+                "waf: {:?} (confidence {:.2}){} on {} — {}",
+                verdict.state,
+                verdict.confidence,
+                vendor,
+                self.target_url,
+                verdict.evidence.join("; "),
+            );
+        } else {
+            log::debug!(
+                "waf: {:?} (confidence {:.2}) on {}",
+                verdict.state,
+                verdict.confidence,
+                self.target_url
+            );
+        }
+
+        (is_ban, retry_after)
+    }
+
+    /// If the server sent a `Retry-After`, sleep that long (bounded) before we
+    /// retry. Leaves the `cooling_down` flag alone — the caller's `tune()` /
+    /// `cool_down()` owns that lifecycle.
+    async fn sleep_retry_after(&self, retry_after: Option<u64>) {
+        const MAX_BACKOFF_MS: u64 = 60_000;
+        if let Some(secs) = retry_after {
+            let ms = secs.saturating_mul(1000).min(MAX_BACKOFF_MS);
+            if ms > 0 {
+                self.ferox_scan
+                    .progress_bar()
+                    .set_message("=> ⏳ honoring Retry-After (WAF)");
+                sleep(Duration::from_millis(ms)).await;
+                self.ferox_scan.progress_bar().set_message("");
             }
         }
+    }
+
+    /// Transient-block backoff (AutoBail path): pause — honoring `Retry-After`
+    /// when present, else the heuristic cool-down — then clear `cooling_down` so
+    /// scanning resumes. We keep the target instead of abandoning it over a blip;
+    /// only a detector-confirmed ban reaches `bail()`.
+    async fn backoff(&self, retry_after: Option<u64>) {
+        const MAX_BACKOFF_MS: u64 = 60_000;
+        let ms = match retry_after {
+            Some(secs) => secs.saturating_mul(1000).min(MAX_BACKOFF_MS),
+            None => self.policy_data.wait_time,
+        };
+        self.ferox_scan
+            .progress_bar()
+            .set_message("=> ⏳ WAF backoff");
+        sleep(Duration::from_millis(ms)).await;
+        self.ferox_scan.progress_bar().set_message("");
+        atomic_store!(self.policy_data.cooling_down, false, Ordering::Release);
     }
 
     /// wrapper for adjust_[up,down] functions, checks error levels to determine adjustment direction
@@ -548,7 +590,10 @@ impl Requester {
                     match self.policy_data.policy {
                         RequesterPolicy::AutoTune => {
                             if let Some(trigger) = self.should_enforce_policy() {
-                                self.note_waf(trigger);
+                                // detector drives: honor a server Retry-After first,
+                                // then tune down (AutoTune never bails).
+                                let (_is_ban, retry_after) = self.classify_waf(trigger);
+                                self.sleep_retry_after(retry_after).await;
                                 if let Err(e) = self.tune(trigger).await {
                                     // reset cooling_down flag on error to prevent permanent lockout
                                     atomic_store!(
@@ -580,15 +625,23 @@ impl Requester {
                         }
                         RequesterPolicy::AutoBail => {
                             if let Some(trigger) = self.should_enforce_policy() {
-                                self.note_waf(trigger);
-                                if let Err(e) = self.bail(trigger).await {
-                                    // reset cooling_down flag on error to prevent permanent lockout
-                                    atomic_store!(
-                                        self.policy_data.cooling_down,
-                                        false,
-                                        Ordering::Release
-                                    );
-                                    return Err(e);
+                                // detector drives: only a confirmed, sustained ban
+                                // (403 wall / persistent trigger / mid-scan block
+                                // page) bails; a transient block just backs off so
+                                // we don't abandon the target over a blip.
+                                let (is_ban, retry_after) = self.classify_waf(trigger);
+                                if is_ban {
+                                    if let Err(e) = self.bail(trigger).await {
+                                        // reset cooling_down flag on error to prevent permanent lockout
+                                        atomic_store!(
+                                            self.policy_data.cooling_down,
+                                            false,
+                                            Ordering::Release
+                                        );
+                                        return Err(e);
+                                    }
+                                } else {
+                                    self.backoff(retry_after).await;
                                 }
                             }
                         }
