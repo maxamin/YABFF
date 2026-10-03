@@ -15,6 +15,7 @@ const B: f64 = 0.75;
 pub struct Bm25 {
     docs: Vec<Vec<String>>,
     df: HashMap<String, usize>,
+    total_len: usize,
     avg_len: f64,
 }
 
@@ -23,6 +24,7 @@ impl Bm25 {
         Self {
             docs: Vec::new(),
             df: HashMap::new(),
+            total_len: 0,
             avg_len: 0.0,
         }
     }
@@ -39,9 +41,11 @@ impl Bm25 {
                 *self.df.entry(t.clone()).or_insert(0) += 1;
             }
         }
+        // Keep a running token total so avg_len is O(1) per insert rather than
+        // re-summing the whole corpus (which made add_document O(n²) overall).
+        self.total_len += toks.len();
         self.docs.push(toks);
-        let total: usize = self.docs.iter().map(|d| d.len()).sum();
-        self.avg_len = total as f64 / self.docs.len() as f64;
+        self.avg_len = self.total_len as f64 / self.docs.len() as f64;
     }
 
     /// Affinity weight of a term = how present it is in the observed corpus.
