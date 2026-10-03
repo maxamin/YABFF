@@ -126,7 +126,13 @@ When enabled (`--discover-base-path`, or set it explicitly with
 root; the whole scan then reroots there, and the probe paths are matched
 **base-relative** so `has("api")` / `root_json` fire under the context path. Off by
 default (a scan stays rooted at the given target unless asked) and skipped in list
-mode.
+mode. The fingerprint probe also runs with `--dont-filter` so the scanner's
+wildcard filter doesn't drop a catch-all's uniform redirects — and with them the
+discriminator headers (`JSESSIONID`, framework cookies) that ride on those
+redirects. (Note: a fully auth-walled app that 302s *every* path to one login page
+is still the honest hard case — rerooting makes it *visible*, but a near-zero
+feature vector can still sit closest to the sparse `LEGACY_STATIC` centroid; that
+residual is classifier-corpus work, not placement.)
 
 ### 2. Path prediction — pluggable autocomplete models (`--algo`)
 [`algo.rs`](ferox-ml-core/src/algo.rs) · [`markov.rs`](ferox-ml-core/src/markov.rs) · [`freqtrie.rs`](ferox-ml-core/src/freqtrie.rs) · [`dynsdt.rs`](ferox-ml-core/src/dynsdt.rs) · [`tst.rs`](ferox-ml-core/src/tst.rs)

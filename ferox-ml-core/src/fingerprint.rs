@@ -125,13 +125,21 @@ pub fn feature_vector(responses: &[ProbeResp]) -> [f64; N_FEATURES] {
     let heavy_html = responses
         .iter()
         .any(|r| r.status != 0 && r.status != 404 && r.word_count > 200);
+    // A strong framework session cookie (JSESSIONID / WordPress / Node / PHP-fw;
+    // Django's csrftoken is already folded into sig_django) means the app is
+    // unambiguously dynamic, even when an auth wall 302s every probe path to a
+    // login page and no path-presence signal survives soft-404 demotion — the
+    // auth-walled Spring (WebGoat) case. Without this, such a target keeps
+    // static_sig high and misclassifies as LEGACY_STATIC despite the cookie.
+    let strong_cookie = cookie_jsession || cookie_wp || cookie_node || cookie_php_fw;
     let strong_dynamic = rest_like
         || has("actuator")
         || has("wp-json")
         || swagger
         || x_powered_by
         || sig_spa
-        || sig_django;
+        || sig_django
+        || strong_cookie;
     let static_sig = if strong_dynamic { 0.1 } else { 0.9 };
 
     let b = |cond: bool| if cond { 1.0 } else { 0.0 };

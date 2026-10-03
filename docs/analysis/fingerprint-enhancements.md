@@ -272,6 +272,28 @@ placement:
   `has("api")` and the `root_json` (empty-path) cue fire exactly as they would for
   a root-mounted app. Without this rewrite the rerooted probe would still look
   blank — the two halves only work together.
+- **Probe `--dont-filter`** — the `all_codes` fingerprint probe now disables
+  feroxbuster's wildcard auto-filter (`RealRunner::cli_args`). An auth-walled app
+  that 302s every path to `/login` with a `JSESSIONID` otherwise has those uniform
+  redirects filtered *before* the engine sees them (verified on the live WebGoat
+  lab: 0 response records by default, 5 — carrying `JSESSIONID` — with
+  `--dont-filter`). feroxml does its own soft-404 handling on the probe, so the raw
+  stream surfaces signal without polluting results. Normal scans keep the filter.
+- **Strong framework cookie ⇒ dynamic** — a `JSESSIONID` / WordPress / Node /
+  PHP-framework session cookie now forces the `sig_static` cue low (Django's
+  `csrftoken` was already handled via `sig_django`), so a dynamic app whose only
+  surviving signal is its session cookie isn't mislabelled static.
+
+**Live-lab limit (honest).** Even with all of the above, WebGoat still classifies
+`LEGACY_STATIC`: its auth wall 302s *every* path to one login page, so soft-404
+demotion zeroes all path-presence features and the near-zero feature vector (lone
+`JSESSIONID` aside) sits closest to the sparse `LEGACY_STATIC` centroid. The
+base-path + `--dont-filter` work removes the *blindness* (the probe now reaches the
+engine; discovery found a resource where it found none before); the residual is a
+*classification*-geometry problem — a strong-discriminator shortcut
+(`JSESSIONID`→SPRING, WP-cookie→WP) or centroid/weight retraining, validated
+against `confusion.rs` with the labelled corpus. That is deliberately left as
+corpus/classifier work, not bolted on as a heuristic.
 
 Deliberately **off by default** (a scan stays at the given target unless asked)
 and **skipped in list mode**. Framework-specific mount names are intentionally

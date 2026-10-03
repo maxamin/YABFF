@@ -87,9 +87,12 @@ pub struct FeroxArgs {
     pub url: String,
     pub words: Vec<String>,
     pub no_recursion: bool,
-    /// When true, do not restrict reported status codes with `-s` (the probe
-    /// needs to see 500s/401s so fingerprinting isn't blind to APIs that error
-    /// on their base path, e.g. Juice Shop's `/rest` → 500).
+    /// When true, this is the fingerprint/probe call: do not restrict reported
+    /// status codes with `-s` (the probe needs to see 500s/401s so fingerprinting
+    /// isn't blind to APIs that error on their base path, e.g. Juice Shop's
+    /// `/rest` → 500), and pass `--dont-filter` so feroxbuster's wildcard
+    /// auto-filter doesn't drop a catch-all's uniform redirects and the
+    /// discriminator headers (e.g. `JSESSIONID`) that ride on them.
     pub all_codes: bool,
     /// Per-call override to let feroxbuster extract links (used by learn mode to
     /// harvest maximum path structure). Scans leave this false so discoveries
@@ -110,6 +113,66 @@ pub struct RealRunner {
 impl RealRunner {
     pub fn new(cfg: Config) -> Self {
         Self { cfg }
+    }
+
+    /// Build the full feroxbuster argument list (everything after the binary
+    /// name) for one scan. Pure and deterministic given `(cfg, args, wl, out)`, so
+    /// the flag logic is unit-testable without launching the subprocess.
+    fn cli_args(
+        &self,
+        args: &FeroxArgs,
+        wl: &std::path::Path,
+        out: &std::path::Path,
+    ) -> Vec<String> {
+        let mut a: Vec<String> = vec![
+            "-u".into(), args.url.clone(),
+            "-w".into(), wl.to_string_lossy().into_owned(),
+            "--json".into(),
+            "-o".into(), out.to_string_lossy().into_owned(),
+            "-q".into(),
+        ];
+        if args.no_recursion {
+            a.push("-n".into());
+        }
+        // discoveries should come from feroxml's engine, not feroxbuster's crawler
+        // (learn mode overrides per-call to harvest maximum structure)
+        if !self.cfg.ferox_extract_links && !args.extract_links {
+            a.push("--dont-extract-links".into());
+        }
+        // The fingerprint/probe call (all_codes) must see the RAW responses:
+        // feroxbuster's wildcard auto-filter otherwise drops a catch-all's uniform
+        // redirects, and with them the discriminator headers that ride on those
+        // redirects (e.g. an auth-walled Spring app that 302s every path to /login
+        // with a JSESSIONID cookie). feroxml does its own soft-404 handling on the
+        // probe (learn_soft_404 / apply_soft_404), so keeping the raw stream here
+        // surfaces signal without polluting results. Normal scans keep the filter.
+        if args.all_codes {
+            a.push("--dont-filter".into());
+        }
+        a.push("-t".into());
+        a.push(self.cfg.threads.to_string());
+        if self.cfg.rate_limit > 0 {
+            a.push("--rate-limit".into());
+            a.push(self.cfg.rate_limit.to_string());
+        }
+        if !self.cfg.tls_verify {
+            a.push("-k".into());
+        }
+        if !self.cfg.scan_time_limit.is_empty() {
+            a.push("--time-limit".into());
+            a.push(self.cfg.scan_time_limit.clone());
+        }
+        for ext in &self.cfg.extensions {
+            a.push("-x".into());
+            a.push(ext.clone());
+        }
+        if !args.all_codes && !self.cfg.success_codes.is_empty() {
+            a.push("-s".into());
+            for c in &self.cfg.success_codes {
+                a.push(c.to_string());
+            }
+        }
+        a
     }
 
     fn write_wordlist(&self, words: &[String]) -> anyhow::Result<std::path::PathBuf> {
@@ -147,37 +210,8 @@ impl FeroxRunner for RealRunner {
         ));
 
         let mut cmd = Command::new(&self.cfg.ferox_binary);
-        cmd.arg("-u").arg(&args.url);
-        cmd.arg("-w").arg(&wl);
-        cmd.arg("--json");
-        cmd.arg("-o").arg(&out);
-        cmd.arg("-q");
-        if args.no_recursion {
-            cmd.arg("-n");
-        }
-        // discoveries should come from feroxml's engine, not feroxbuster's crawler
-        // (learn mode overrides per-call to harvest maximum structure)
-        if !self.cfg.ferox_extract_links && !args.extract_links {
-            cmd.arg("--dont-extract-links");
-        }
-        cmd.arg("-t").arg(self.cfg.threads.to_string());
-        if self.cfg.rate_limit > 0 {
-            cmd.arg("--rate-limit").arg(self.cfg.rate_limit.to_string());
-        }
-        if !self.cfg.tls_verify {
-            cmd.arg("-k");
-        }
-        if !self.cfg.scan_time_limit.is_empty() {
-            cmd.arg("--time-limit").arg(&self.cfg.scan_time_limit);
-        }
-        for ext in &self.cfg.extensions {
-            cmd.arg("-x").arg(ext);
-        }
-        if !args.all_codes && !self.cfg.success_codes.is_empty() {
-            cmd.arg("-s");
-            for c in &self.cfg.success_codes {
-                cmd.arg(c.to_string());
-            }
+        for a in self.cli_args(args, &wl, &out) {
+            cmd.arg(a);
         }
 
         let status = cmd.status();
@@ -223,5 +257,33 @@ garbage line that is not json
         let r = parse_responses(FIXTURE);
         assert!(r[0].is_directory(), "301 with trailing-slash location is a dir");
         assert!(!r[1].is_directory());
+    }
+
+    fn args_for(all_codes: bool) -> Vec<String> {
+        let mut cfg = Config::default();
+        cfg.success_codes = vec![200, 301];
+        let runner = RealRunner::new(cfg);
+        let a = FeroxArgs {
+            url: "https://x.test/".into(),
+            words: vec!["a".into()],
+            no_recursion: true,
+            all_codes,
+            extract_links: false,
+        };
+        runner.cli_args(&a, std::path::Path::new("/tmp/wl"), std::path::Path::new("/tmp/out"))
+    }
+
+    #[test]
+    fn probe_passes_dont_filter_and_no_status_restriction() {
+        let probe = args_for(true);
+        assert!(probe.iter().any(|x| x == "--dont-filter"), "probe must disable the wildcard filter: {probe:?}");
+        assert!(!probe.iter().any(|x| x == "-s"), "probe must not restrict status codes: {probe:?}");
+    }
+
+    #[test]
+    fn normal_scan_keeps_filter_and_restricts_status() {
+        let scan = args_for(false);
+        assert!(!scan.iter().any(|x| x == "--dont-filter"), "scans keep feroxbuster's wildcard filter: {scan:?}");
+        assert!(scan.iter().any(|x| x == "-s"), "scans restrict to success codes: {scan:?}");
     }
 }

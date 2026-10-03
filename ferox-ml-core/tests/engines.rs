@@ -86,6 +86,22 @@ fn empty_or_all_404_probes_are_static() {
 }
 
 #[test]
+fn strong_framework_cookie_marks_the_app_dynamic() {
+    // A strong framework session cookie (here JSESSIONID) means the app is
+    // dynamic even when an auth wall 302s every path and no path-presence signal
+    // survives — so the static cue (feature 17) must be LOW, not the 0.9 default.
+    // Regression guard for the auth-walled-Spring (WebGoat) probe path.
+    let mut r = ProbeResp::new("https://x.test/actuator", 302);
+    r.headers.insert("set-cookie".into(), "JSESSIONID=abc123; path=/".into());
+    let fv = feature_vector(&[r]);
+    assert_eq!(fv[17], 0.1, "framework cookie present => not a static site: fv={fv:?}");
+
+    // control: a genuinely static response (no framework cookie) keeps the high cue
+    let s = ProbeResp::new("https://x.test/robots.txt", 200);
+    assert_eq!(feature_vector(&[s])[17], 0.9, "no dynamic signal => static cue stays high");
+}
+
+#[test]
 fn catch_all_guard_fires_only_without_a_strong_discriminator() {
     // a catch-all server: answers 200 to (almost) every probe path, no cookie/405
     let catchall: Vec<ProbeResp> = PROBE_PATHS
