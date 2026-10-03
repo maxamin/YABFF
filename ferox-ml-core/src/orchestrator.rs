@@ -649,7 +649,15 @@ pub struct LearnSummary {
 }
 
 fn signature_of(r: &FeroxResponse) -> Signature {
-    Signature::new(r.status, r.content_length, r.word_count, r.line_count)
+    let sig = Signature::new(r.status, r.content_length, r.word_count, r.line_count);
+    // A redirect's body is empty/boilerplate, so the only discriminator between a
+    // real directory hit and a catch-all soft-404 is where it points: fold the
+    // Location in so distinct-target redirects don't collapse onto the probe's.
+    if (300..400).contains(&r.status) {
+        sig.with_location(r.header("location"))
+    } else {
+        sig
+    }
 }
 
 fn is_hit(r: &FeroxResponse, cfg: &Config) -> bool {

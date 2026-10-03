@@ -99,13 +99,20 @@ impl ProbeResp {
             .map(|(_, v)| v.as_str())
     }
 
-    /// Coarse response signature for soft-404 / near-duplicate detection.
+    /// Coarse response signature for soft-404 / near-duplicate detection. For a
+    /// redirect the `Location` target is folded in (see [`dedup::Signature`]), so
+    /// distinct-target redirects don't collapse onto a catch-all probe's.
     pub fn signature(&self) -> crate::dedup::Signature {
-        crate::dedup::Signature::new(
+        let sig = crate::dedup::Signature::new(
             self.status,
             self.content_length,
             self.word_count,
             self.line_count,
-        )
+        );
+        if (300..400).contains(&self.status) {
+            sig.with_location(self.header("location"))
+        } else {
+            sig
+        }
     }
 }

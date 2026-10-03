@@ -54,12 +54,22 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
 
 /// A coarse response fingerprint available from feroxbuster's JSON stream.
 /// `content_length` is bucketed so near-identical templates collide.
+///
+/// For a redirect (3xx) the body carries no signal (it is usually empty), so
+/// two redirects to *different* targets would otherwise share one signature and
+/// a genuine directory hit (`/admin` → `/admin/`) would be lumped with the
+/// random calibration probe's redirect and dropped as a soft-404. `loc` folds
+/// the `Location` target into the signature so only redirects pointing at the
+/// *same* place collide — a generic catch-all redirect stays filtered, while a
+/// self-referential directory redirect (unique `Location` per path) survives.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Signature {
     pub status: u16,
     pub len_bucket: u64,
     pub words: u64,
     pub lines: u64,
+    /// Hash of the redirect `Location` (0 when absent / not a redirect).
+    pub loc: u64,
 }
 
 impl Signature {
@@ -69,7 +79,18 @@ impl Signature {
             len_bucket: content_length / 16, // 16-byte buckets
             words,
             lines,
+            loc: 0,
         }
+    }
+
+    /// Fold a redirect `Location` into the signature. Only meaningful for 3xx
+    /// (callers pass `None` otherwise); `None` or an empty value leaves `loc` 0.
+    pub fn with_location(mut self, location: Option<&str>) -> Self {
+        self.loc = match location {
+            Some(l) if !l.is_empty() => fnv1a64(l.as_bytes()),
+            _ => 0,
+        };
+        self
     }
 }
 
@@ -116,5 +137,28 @@ mod tests {
         assert!(f.is_soft_not_found(&Signature::new(200, 1500, 120, 30)));
         assert!(f.is_soft_not_found(&Signature::new(200, 1495, 120, 30))); // same 16-byte bucket
         assert!(!f.is_soft_not_found(&Signature::new(200, 4096, 400, 90)));
+    }
+
+    #[test]
+    fn redirect_location_distinguishes_otherwise_identical_signatures() {
+        // All three are bare 301s with an identical (empty) body, so without the
+        // Location they would share one signature.
+        let probe = Signature::new(301, 17, 2, 0).with_location(Some("https://connect.example.com/"));
+        let mut f = SoftNotFoundFilter::new();
+        f.learn_bogus(probe);
+
+        // A catch-all redirect to the SAME target is still a soft-404.
+        let catch_all =
+            Signature::new(301, 17, 2, 0).with_location(Some("https://connect.example.com/"));
+        assert!(f.is_soft_not_found(&catch_all));
+
+        // A real directory hit redirects to its own path -> different Location ->
+        // different signature -> NOT filtered.
+        let real_dir =
+            Signature::new(301, 17, 2, 0).with_location(Some("https://example.com/admin/"));
+        assert!(!f.is_soft_not_found(&real_dir));
+
+        // No Location (loc = 0) is distinct from a located redirect.
+        assert!(!f.is_soft_not_found(&Signature::new(301, 17, 2, 0)));
     }
 }
