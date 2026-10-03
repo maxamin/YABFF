@@ -1,392 +1,328 @@
 '=============================================================================
-' WAF-flagging detector — design model (PlantUML)
+' WAF-BAN detector — design model (PlantUML), built on feroxbuster internals
 '
-' Proposed new module:  ferox-ml-core/src/waf.rs  (pub mod waf)
+' Proposed new module:  ferox-ml-core/src/waf.rs  (pub mod waf) + a thin
+' observer wired into feroxbuster-ml/src/scanner/requester.rs.
 ' Status: DESIGN ONLY — no code applied. This file is the blueprint.
 '
-' Goal: detect, as generically and effectively as possible, when a target's
-' edge/WAF has started FLAGGING our traffic (blocking, rate-limiting,
-' tarpitting, serving canned challenge/deny pages) so the scan can react
-' (throttle / back off / recalibrate / bail) instead of burning budget on
-' poisoned results — exactly the failure mode seen when a run turned into a
-' wall of 403s from a CDN edge.
+' GREATER GOAL
+'   Decide, per site, whether the target's WAF/edge has BANNED us (sustained
+'   block) versus a transient hiccup — and react — by REUSING feroxbuster's
+'   existing rate/error-reaction machinery instead of building a parallel
+'   pipeline. feroxbuster already:
+'     * tallies per-scan 403s / 429s / errors / requests   (FeroxScan)
+'     * tallies global timeouts / conn / TLS / 5xx / wildcards (Stats)
+'     * decides when a threshold is crossed      (Requester::should_enforce_policy)
+'     * reacts by slowing down or stopping       (tune / bail, RequesterPolicy)
+'     * learns per-dir block pages               (HeuristicTests + WildcardFilter)
+'   The detector is a SMALL classifier/aggregator on top of these facts; it adds
+'   only what feroxbuster lacks: ban-vs-transient persistence, mid-scan block-page
+'   shift detection, vendor attribution, and a single explainable verdict that
+'   routes back into the EXISTING tune()/bail() path.
 '
-' Design pillars
-'   GENERIC    - a vendor-AGNOSTIC statistical core (works on any target, even
-'                unknown/custom WAFs) + an OPTIONAL, data-driven vendor layer
-'                for attribution. Self-calibrating baseline => no magic
-'                constants tuned to one site. No network I/O in the core, so it
-'                is deterministic and unit-testable. Reuses the existing
-'                dedup::Signature + simhash instead of inventing fingerprints.
-'   EFFECTIVE  - fuses several weak, independent signals into one confidence
-'                score (cuts false positives AND false negatives); a hysteretic,
-'                min-dwell state machine stops flapping; vendor attribution lets
-'                the caller pick a targeted reaction (e.g. honor Retry-After).
+' Legend:  <<ferox>> = already exists in feroxbuster-ml (REUSED, unchanged)
+'          <<new>>   = proposed addition in this design
 '=============================================================================
 
-@startuml waf_detection_classes
-title WAF-flagging detector — class model (ferox-ml-core::waf)
+@startuml waf_ban_classes
+title WAF-ban detector — class model (reuses feroxbuster internals)
 
 skinparam shadowing false
 skinparam classAttributeIconSize 0
 hide empty members
+skinparam class {
+  BackgroundColor<<ferox>> #EAF3FF
+  BorderColor<<ferox>>     #2F6FB0
+  BackgroundColor<<new>>   #FFF3D6
+  BorderColor<<new>>       #B07A00
+}
 
-'------------------------------------------------------------------ inputs
-package "existing crate types (reused, not redefined)" <<Frame>> {
+'================= existing feroxbuster facilities (reused verbatim) =========
+package "feroxbuster (existing)" <<Frame>> {
+
+  class FeroxScan <<ferox>> {
+    -status_403s : AtomicUsize
+    -status_429s : AtomicUsize
+    -errors : AtomicUsize
+    +requests() : u64
+    +num_errors(t : PolicyTrigger) : usize
+    +add_403()
+    +add_429()
+  }
+
+  class Stats <<ferox>> {
+    -timeouts : AtomicUsize
+    -connection_errors : AtomicUsize
+    -certificate_errors : AtomicUsize
+    -status_403s / status_429s : AtomicUsize
+    -status_500s / status_503s : AtomicUsize
+    -wildcards_filtered : AtomicUsize
+    +update_f(field : StatField)
+  }
+  enum StatField <<ferox>>
+  enum StatError <<ferox>>
+
+  enum PolicyTrigger <<ferox>> {
+    Status403
+    Status429
+    Errors
+    TryAdjustUp
+  }
+  enum RequesterPolicy <<ferox>> {
+    AutoTune
+    AutoBail
+    Default
+  }
+  class PolicyData <<ferox>> {
+    +policy : RequesterPolicy
+    +cooling_down : AtomicBool
+    +wait_time : u64
+    +errors : [AtomicUsize; 3]
+    +heap : RwLock<LimitHeap>
+    +rate_limit : Option<usize>
+  }
+  class LimitHeap <<ferox>>
+
+  class Requester <<ferox>> {
+    -ferox_scan : Arc<FeroxScan>
+    -policy_data : PolicyData
+    -handles : Arc<Handles>
+    +should_enforce_policy() : Option<PolicyTrigger>
+    -too_many_errors() : bool          ' total >= max(threads/2, 25)
+    -too_many_status_errors(t) : bool  ' 403 ratio>=0.90, 429 ratio>=0.30
+    +tune(t : PolicyTrigger)           ' slow down via LimitHeap
+    +bail(t : PolicyTrigger)           ' stop this scan
+    +cool_down()
+  }
+  note bottom of Requester
+    HIGH_ERROR_RATIO = 0.90 (lib.rs). Request floor before any
+    enforcement: requests >= max(threads, 50). These are the
+    thresholds the detector reuses — it does NOT re-invent them.
+  end note
+
+  class HeuristicTests <<ferox>> {
+    +detect_404_like_responses(...) : Vec<WildcardFilter>
+    +connectivity(targets) : Vec<String>
+  }
+  class WildcardFilter <<ferox>>
+  class SimilarityFilter <<ferox>>
+
   class FeroxResponse <<ferox>> {
     +url : String
-    +status : u16
-    +content_length : u64
-    +word_count : u64
-    +line_count : u64
-    +headers : HashMap<String,String>
+    +status() : StatusCode
+    +headers() : HeaderMap
+    +content_length() : u64
   }
-  class Signature <<dedup>> {
-    +status : u16
-    +len_bucket : u64
-    +words : u64
-    +lines : u64
+}
+
+'================= new, thin additions ======================================
+package "ferox-ml-core::waf (new)" <<Frame>> {
+
+  enum BanState <<new>> {
+    Clear
+    RateLimited
+    Throttled
+    Banned
+    Bailed
   }
-  note bottom of Signature
-    dedup::simhash() + dedup::Signature are reused as the
-    cheap "response fingerprint". The detector adds no new
-    body-hashing machinery.
+
+  class BanSignals <<new>> {
+    .. a snapshot DERIVED from existing tallies (no new counting) ..
+    +requests : u64
+    +ratio_403 : f64        ' FeroxScan.num_errors(Status403)/requests
+    +ratio_429 : f64        ' FeroxScan.num_errors(Status429)/requests
+    +error_count : usize    ' FeroxScan.num_errors(Errors)
+    +retry_after : Option<u64>   ' from 429/503 FeroxResponse headers
+    +new_wildcard_midscan : bool ' HeuristicTests produced a wildcard after warm-up
+    +transport_spike : bool      ' Stats timeouts/conn/TLS rising
+    +from(scan : &FeroxScan, stats : &Stats) : BanSignals
+  }
+
+  class VendorAttributor <<new>> {
+    .. reads headers/cookies ALREADY on FeroxResponse ..
+    +identify(resp : &FeroxResponse) : Option<WafVendor>
+  }
+  enum WafVendor <<new>> {
+    Cloudflare
+    Akamai
+    AwsWafShield
+    Imperva
+    Sucuri
+    Fastly
+    ModSecurity
+    Generic
+    Unknown
+  }
+
+  class BanVerdict <<new>> {
+    +state : BanState
+    +trigger : Option<PolicyTrigger>   ' reuse feroxbuster's own enum
+    +confidence : f64
+    +vendor : Option<WafVendor>
+    +persisted_intervals : u32         ' how long the trigger has held
+    +evidence : Vec<String>
+  }
+
+  class WafBanDetector <<new>> {
+    -policy : RequesterPolicy
+    -state : BanState
+    -consecutive_triggers : u32
+    -warm : bool
+    -attributor : VendorAttributor
+    --
+    +new(policy : RequesterPolicy) : WafBanDetector
+    +observe_response(resp : &FeroxResponse)  ' attribution + retry-after only
+    +classify(sig : &BanSignals, t : Option<PolicyTrigger>) : BanVerdict
+    -is_sustained() : bool   ' trigger held across >= N cooldown intervals
+    -reaction_for(v : &BanVerdict) : WafReaction
+  }
+  note right of WafBanDetector
+    classify() does NOT re-scan or re-threshold: it takes the
+    Option<PolicyTrigger> that Requester::should_enforce_policy()
+    ALREADY produced, then adds the ban-specific judgement:
+      * transient  = trigger fires once, clears after a tune()
+      * BAN        = same trigger persists across cooldowns, OR a
+                     403-wall (ratio_403 ~ 1.0), OR a block page
+                     appears mid-scan (new_wildcard_midscan)
+    Vendor + evidence make it explainable.
   end note
+
+  enum WafReaction <<new>> {
+    Continue
+    Tune        ' -> Requester::tune()  (AutoTune path)
+    Backoff     ' -> honor retry_after, then cool_down()
+    Bail        ' -> Requester::bail()  (AutoBail path)
+  }
 }
 
-enum TransportOutcome {
-  Ok
-  Timeout
-  ConnReset
-  TlsHandshakeError
-  DnsFailure
-  ProtocolError
-}
+'================= relationships: new COMPOSES existing =====================
+BanSignals ..> FeroxScan      : derives from
+BanSignals ..> Stats          : derives from
+BanSignals ..> FeroxResponse  : retry_after
+VendorAttributor ..> FeroxResponse : reads headers/cookies
+VendorAttributor --> WafVendor
 
-class Observation {
-  +response : Option<FeroxResponse>
-  +elapsed_ms : u64
-  +transport : TransportOutcome
-  +request_path : String
-  --
-  .. built by the caller per request ..
-}
-Observation --> "0..1" FeroxResponse
-Observation --> TransportOutcome
+WafBanDetector *-- VendorAttributor
+WafBanDetector ..> BanSignals : classify()
+WafBanDetector --> BanVerdict : produces
+WafBanDetector --> WafReaction
+BanVerdict --> BanState
+BanVerdict --> PolicyTrigger   : reuses
+BanVerdict --> "0..1" WafVendor
 
-'------------------------------------------------------------------ core state
-class RollingStat {
-  -alpha : f64
-  -mean : f64
-  -var : f64
-  -n : u64
-  +observe(x : f64)
-  +zscore(x : f64) : f64
-  +mean() : f64
-}
-
-class Baseline {
-  +calibrated : bool
-  +samples : u64
-  +nominal_block_rate : f64
-  +nominal_latency_ms : f64
-  +dominant_ok_sig : Option<Signature>
-  +capture(win : &Window)
-  +is_warm(cfg : &DetectorConfig) : bool
-}
-note right of Baseline
-  Captured only while state == Clear (warm-up). This is what
-  makes the detector GENERIC: "normal" is learned per target,
-  so a site that naturally 403s a lot does not self-trigger.
-end note
-
-class Window {
-  -capacity : usize
-  -buf : VecDeque<Observation>
-  +block_rate : RollingStat
-  +latency : RollingStat
-  +baseline : Baseline
-  -sig_counts : HashMap<Signature,u32>
-  -distinct_paths : u32
-  +push(obs : Observation)
-  +recent(n : usize) : &[Observation]
-  +fingerprint_convergence() : f64
-  +block_class_rate() : f64
-}
-Window *-- RollingStat
-Window *-- Baseline
-Window o-- "0..N" Observation
-Window ..> Signature : keys sig_counts
-
-'------------------------------------------------------------------ signals
-interface Signal <<trait>> {
-  +name() : &'static str
-  +weight() : f64
-  +evaluate(win : &Window) : SignalScore
-  +reset()
-}
-note top of Signal
-  Each Signal is a weak, INDEPENDENT detector returning a
-  normalized score in [0,1] plus human-readable evidence.
-  Add a new WAF behaviour by adding one Signal impl — the
-  aggregator and state machine never change.
-end note
-
-class SignalScore {
-  +value : f64   ' 0..1 strength
-  +confidence : f64
-  +evidence : String
-}
-
-class StatusRegimeSignal {
-  .. burst of 4xx/5xx block-class codes vs calibrated baseline ..
-  +evaluate(win) : SignalScore
-}
-class BlockTemplateSignal {
-  .. many DISTINCT requests collapsing onto one response ..
-  .. fingerprint (Signature/simhash convergence) => canned page ..
-  +radius : u32
-  +evaluate(win) : SignalScore
-}
-class RateLimitSignal {
-  .. 429/503 + Retry-After / RateLimit-* / Cf-Mitigated headers ..
-  +evaluate(win) : SignalScore
-}
-class LatencySignal {
-  .. EWMA z-score: tarpit (slow) or instant canned deny (fast) ..
-  +evaluate(win) : SignalScore
-}
-class TransportSignal {
-  .. spike in resets/timeouts/TLS drops = connection-level block ..
-  +evaluate(win) : SignalScore
-}
-class VendorFingerprintSignal {
-  .. strong score + attribution from VendorTable match ..
-  -table : VendorTable
-  +evaluate(win) : SignalScore
-}
-Signal <|.. StatusRegimeSignal
-Signal <|.. BlockTemplateSignal
-Signal <|.. RateLimitSignal
-Signal <|.. LatencySignal
-Signal <|.. TransportSignal
-Signal <|.. VendorFingerprintSignal
-Signal ..> SignalScore
-BlockTemplateSignal ..> Signature : counts convergence
-
-'------------------------------------------------------------------ vendor layer (data-driven, optional)
-class VendorTable {
-  -prints : Vec<VendorFingerprint>
-  +builtin() : VendorTable
-  +from_toml(path) : VendorTable
-  +match(resp : &FeroxResponse) : Option<(WafVendor,f64)>
-}
-class VendorFingerprint {
-  +vendor : WafVendor
-  +header_keys : Vec<String>
-  +cookie_prefixes : Vec<String>
-  +body_markers : Vec<Regex>
-  +status_hints : Vec<u16>
-}
-enum WafVendor {
-  Cloudflare
-  Akamai
-  AwsWafShield
-  Imperva
-  Sucuri
-  F5BigIp
-  ModSecurity
-  Fastly
-  Generic
-  Unknown
-}
-VendorTable o-- "0..N" VendorFingerprint
-VendorFingerprint --> WafVendor
-VendorFingerprintSignal --> VendorTable
-
-'------------------------------------------------------------------ decision
-enum WafState {
-  Clear
-  Suspected
-  Flagged
-  Blocked
-}
-enum Reaction {
-  Continue
-  Throttle_factor
-  Backoff_for_ms
-  Recalibrate
-  Bail
-}
-note right of Reaction
-  Throttle(factor:f64), Backoff{for_ms:u64} carry payloads.
-  The caller maps these onto existing controls (see bridge).
-end note
-
-class SignalEvidence {
-  +signal : &'static str
-  +score : f64
-  +detail : String
-}
-class WafVerdict {
-  +state : WafState
-  +confidence : f64
-  +vendor : Option<WafVendor>
-  +fired : Vec<SignalEvidence>
-  +recommendation : Reaction
-}
-WafVerdict --> WafState
-WafVerdict --> Reaction
-WafVerdict --> "0..1" WafVendor
-WafVerdict o-- "0..N" SignalEvidence
-
-class DetectorConfig {
-  +window_size : usize
-  +warmup_samples : usize
-  +weights : SignalWeights
-  +enter_suspected : f64
-  +enter_flagged : f64
-  +enter_blocked : f64
-  +exit_hysteresis : f64   ' gap below enter-threshold to leave a state
-  +min_dwell : usize       ' observations before a transition may reverse
-  +simhash_radius : u32
-  +default() : DetectorConfig
-}
-class SignalWeights {
-  +status : f64
-  +template : f64
-  +rate_limit : f64
-  +latency : f64
-  +transport : f64
-  +vendor : f64
-}
-DetectorConfig *-- SignalWeights
-
-'------------------------------------------------------------------ facade
-class WafDetector <<facade>> {
-  -cfg : DetectorConfig
-  -window : Window
-  -signals : Vec<Box<dyn Signal>>
-  -vendors : VendorTable
-  -state : WafState
-  -confidence : f64
-  -dwell : usize
-  -last : WafVerdict
-  --
-  +new(cfg : DetectorConfig) : WafDetector
-  +observe(obs : Observation) : &WafVerdict
-  +verdict() : &WafVerdict
-  +recalibrate()
-  -fuse() : (f64, Vec<SignalEvidence>)   ' weighted score + evidence
-  -step_state(score : f64)               ' hysteresis + min_dwell
-  -reaction_for(state) : Reaction
-}
-WafDetector *-- DetectorConfig
-WafDetector *-- Window
-WafDetector *-- "1..N" Signal
-WafDetector *-- VendorTable
-WafDetector --> WafVerdict : produces
-WafDetector ..> Observation : consumes
-
-'------------------------------------------------------------------ integration (no changes applied; shown for context)
-class MlLoopWafBridge <<adapter>> {
-  .. translates a WafVerdict.recommendation into controls the ..
-  .. orchestrator / feroxbuster already own ..
-  +apply(v : &WafVerdict) : PolicyDelta
-}
-enum RequesterPolicy <<feroxbuster>> {
-  AutoTune
-  AutoBail
-  Default
-}
-MlLoopWafBridge ..> WafVerdict
-MlLoopWafBridge ..> RequesterPolicy
-note bottom of MlLoopWafBridge
-  Reaction  ->  existing control
-  --------------------------------------------
-  Continue      -> no change
-  Throttle(f)   -> lower concurrency / rate_limit (AutoTune-like)
-  Backoff(ms)   -> sleep arm, honor Retry-After
-  Recalibrate   -> drop learned soft-404 baseline + re-probe
-  Bail          -> stop this target (AutoBail), continue the sweep
-  The detector only RECOMMENDS; the caller decides. Keeps the
-  module side-effect free and reusable (CLI scan, ml-loop, tests).
-end note
+' the detector slots INTO the existing requester decision point
+Requester ..> WafBanDetector : feeds should_enforce_policy() result\n+ FeroxScan/Stats snapshot
+WafReaction ..> Requester : Tune -> tune(), Bail -> bail(),\nBackoff -> cool_down()
+BanSignals ..> HeuristicTests : new_wildcard_midscan via\ndetect_404_like_responses()
+HeuristicTests --> WildcardFilter
+HeuristicTests --> SimilarityFilter
 
 @enduml
 
 
-@startuml waf_detection_state
-title WAF-flagging detector — decision state machine
+@startuml waf_ban_state
+title WAF-ban state machine — layered on existing tune()/bail()
 
 skinparam shadowing false
 [*] --> Clear
 
 state Clear {
-  Clear : capture/refresh Baseline (warm-up)
-  Clear : recommendation = Continue
+  Clear : should_enforce_policy() == None
+  Clear : reaction = Continue
 }
-state Suspected {
-  Suspected : one weak signal elevated
-  Suspected : recommendation = Throttle(0.5)
+state RateLimited {
+  RateLimited : trigger == Status429 (ratio_429 >= 0.30)
+  RateLimited : reaction = Backoff (honor Retry-After)
 }
-state Flagged {
-  Flagged : fused confidence sustained high
-  Flagged : recommendation = Backoff(Retry-After | expo)
+state Throttled {
+  Throttled : trigger == Errors OR first Status403
+  Throttled : reaction = Tune  (Requester::tune via LimitHeap)
 }
-state Blocked {
-  Blocked : near-total block / hard deny / transport kill
-  Blocked : recommendation = Bail (this target)
+state Banned {
+  Banned : 403-wall ratio_403 >= 0.90 (HIGH_ERROR_RATIO)
+  Banned : OR same trigger persists across cooldowns
+  Banned : OR block page appears mid-scan (new wildcard)
+  Banned : reaction = Bail if AutoBail else deep Backoff
+}
+state Bailed {
+  Bailed : Requester::bail() called; sweep moves to next target
 }
 
-Clear --> Suspected : fused >= enter_suspected
-Suspected --> Flagged : fused >= enter_flagged\n(held >= min_dwell)
-Flagged --> Blocked : fused >= enter_blocked\nOR block_rate ~ 1.0
-Suspected --> Clear : fused <= enter_suspected - exit_hysteresis\n(held >= min_dwell)
-Flagged --> Suspected : fused <= enter_flagged - exit_hysteresis
-Blocked --> Flagged : recovery after Backoff\n(fused drops)
+Clear --> RateLimited : should_enforce_policy()=Status429
+Clear --> Throttled   : should_enforce_policy()=Errors|Status403
+RateLimited --> Clear  : ratio_429 falls after Backoff
+Throttled --> Clear    : tune() recovers, trigger clears
+RateLimited --> Banned : 429 persists AND tune cannot recover
+Throttled --> Banned   : trigger persists >= N cooldown intervals
+Banned --> Bailed      : policy == AutoBail
+Banned --> Throttled   : recovery after deep Backoff (AutoTune)
+Bailed --> [*]
 
-note right of Blocked
-  Hysteresis (exit_hysteresis) + min_dwell prevent flapping
-  between states on noisy single-sample spikes. Recovery is
-  always one step at a time, never Blocked->Clear directly.
+note right of Banned
+  "persists across cooldowns" reuses PolicyData.cooling_down +
+  wait_time: the detector counts how many enforcement intervals
+  the SAME trigger survives. One-shot spike => transient (stay
+  Throttled); sustained => ban. This is the single judgement the
+  existing code does not make on its own.
 end note
-
-Flagged --> Flagged : sustained Clear window => Recalibrate\n(baseline may be stale)
 @enduml
 
 
-@startuml waf_detection_sequence
-title WAF-flagging detector — per-request flow inside the ml-loop round
+@startuml waf_ban_sequence
+title WAF-ban detection — inside the existing Requester scan loop
 
 skinparam shadowing false
-actor "ml-loop round" as Loop
-participant "FeroxRunner" as Runner
-participant "WafDetector" as Det
-participant "Window+Signals" as Sig
-participant "MlLoopWafBridge" as Bridge
-participant "Scheduler / Budget" as Ctl
+participant "Requester\n(scan loop)" as Req <<ferox>>
+participant "FeroxScan /\nStats" as Tallies <<ferox>>
+participant "WafBanDetector" as Det <<new>>
+participant "HeuristicTests" as Heur <<ferox>>
+participant "tune() / bail()\n/ cool_down()" as React <<ferox>>
 
-Loop -> Runner : run(arm, words)
-Runner --> Loop : Vec<FeroxResponse> (+timing / transport)
-
-loop for each response / outcome
-  Loop -> Det : observe(Observation)
-  Det -> Sig : push(obs); evaluate all Signals
-  Sig --> Det : [SignalScore...]
-  Det -> Det : fuse() -> confidence + evidence
-  Det -> Det : step_state() (hysteresis, min_dwell)
-  Det --> Loop : &WafVerdict {state, confidence, vendor, reaction}
+loop per response (existing flow)
+  Req -> Tallies : add_403/add_429/add_error (already happens)
+  Req -> Det : observe_response(resp)
+  note right of Det : vendor attribution + Retry-After\n(read headers already present)
 end
 
-alt verdict.state == Clear
-  Loop -> Ctl : proceed normally
-else Suspected / Flagged
-  Loop -> Bridge : apply(verdict)
-  Bridge -> Ctl : Throttle / Backoff (honor Retry-After)
-  note right of Ctl : results during Flagged are\nquarantined from reward/learning
-else Blocked
-  Loop -> Bridge : apply(verdict)
-  Bridge -> Ctl : Bail this target; sweep continues
+== existing enforcement checkpoint (every interval) ==
+Req -> Req : t = should_enforce_policy()  // existing thresholds
+Req -> Tallies : requests(), num_errors(trigger)
+Req -> Heur : block page shifted mid-scan? (new WildcardFilter)
+Req -> Det : classify(BanSignals::from(scan,stats), t)
+Det --> Req : BanVerdict {state, confidence, vendor, reaction}
+
+alt reaction == Continue
+  Req -> Req : proceed
+else reaction == Tune
+  Req -> React : tune(trigger)        // slow down, existing AutoTune
+else reaction == Backoff
+  Req -> React : cool_down()          // honor Retry-After, existing
+else reaction == Bail
+  Req -> React : bail(trigger)        // stop target, existing AutoBail
+  note right of React : ml-loop sweep continues\nwith the next target
 end
 @enduml
+
+
+'=============================================================================
+' REUSE / TRACEABILITY — each ban signal maps to something feroxbuster already
+' computes; the detector only interprets and persists.
+'
+'   ban signal              existing source (reused)
+'   ----------------------  -------------------------------------------------
+'   403 wall                FeroxScan.status_403s + too_many_status_errors()
+'                           (ratio >= HIGH_ERROR_RATIO = 0.90)
+'   429 rate-limit          FeroxScan.status_429s (ratio >= 0.30) + Retry-After
+'   error/timeout storm     FeroxScan.errors + too_many_errors()
+'                           (>= max(threads/2,25)); Stats timeouts/conn/TLS
+'   canned block page       HeuristicTests::detect_404_like_responses ->
+'                           a NEW WildcardFilter appearing after warm-up
+'   vendor attribution      headers/cookies already on FeroxResponse
+'   "is this sustained?"    PolicyData.cooling_down + wait_time intervals
+'   reaction                Requester::tune()/bail()/cool_down(),
+'                           RequesterPolicy::{AutoTune,AutoBail}
+'
+' Net new code is small: BanSignals (a read-only snapshot), VendorAttributor,
+' and WafBanDetector.classify()/persistence. Everything else is wiring into
+' the one decision point that already exists.
+'=============================================================================
