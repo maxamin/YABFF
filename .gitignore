@@ -17,3 +17,6 @@ tools/
 # feroxbuster-ml fork build artifacts / runtime state
 feroxbuster-ml/target/
 feroxbuster-ml/.feroxml/
+
+# stray runtime logs
+*.log
