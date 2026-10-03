@@ -185,10 +185,10 @@ if [ "$RUN_WAF" = 1 ]; then
 
     # N2 auto-tune: no false WAF positive on a friendly lab
     out=$(timeout 40 "$BIN" -u "$FAST" -w "$WL_DIR/words.txt" -k -q --no-state -n \
-      --auto-tune -s "$CODES" --threads 10 -vv 2>&1); rc=$?
-    { [ "$rc" = 0 ] && ! echo "$out" | grep -qiE 'waf: (Banned|Bailed)|bailing'; } \
+      --auto-tune -s "$CODES" --threads 10 2>&1); rc=$?
+    { [ "$rc" = 0 ] && ! echo "$out" | grep -qiE 'WAF +(Banned|Bailed)|bailing'; } \
       && ok "N2 auto-tune: no false WAF ban on friendly lab" \
-      || bad "N2 auto-tune false positive" "rc=$rc $(echo "$out" | grep -i 'waf:' | tail -1)"
+      || bad "N2 auto-tune false positive" "rc=$rc $(echo "$out" | grep -i 'WAF' | tail -1)"
   else skip "N1/N2 (fast lab down)"; fi
 
   # ---- adversarial fixtures (throwaway, loopback only) ----
@@ -225,9 +225,12 @@ PY
     timeout 40 "$BIN" -u "http://127.0.0.1:8461/" -w "$TMP/waf_words.txt" -k -q --no-state -n -D \
       --auto-bail -s "$CODES" --threads 10 >"$TMP/n3.out" 2>&1
     n3=$(count_results "$TMP/n3.out")
-    { [ "$n3" -ge 40 ] && [ "$n3" -lt $((WAF_WORDS * 3 / 4)) ]; } \
-      && ok "N3 403-wall -> AutoBail cancels early ($n3/$WAF_WORDS requests)" \
-      || bad "N3 403-wall -> bail" "scanned $n3/$WAF_WORDS (expected ~50, well short of full)"
+    early=0; { [ "$n3" -ge 40 ] && [ "$n3" -lt $((WAF_WORDS * 3 / 4)) ]; } && early=1
+    # the verdict line must be visible WITHOUT -v (the log-visibility fix)
+    visible=0; grep -qiE 'WAF +(Banned|Bailed).*(403 wall|vendor)' "$TMP/n3.out" && visible=1
+    { [ "$early" = 1 ] && [ "$visible" = 1 ]; } \
+      && ok "N3 403-wall -> AutoBail cancels early + verdict visible ($n3/$WAF_WORDS)" \
+      || bad "N3 403-wall -> bail" "scanned=$n3/$WAF_WORDS early=$early verdict_visible=$visible"
   else skip "N3 (could not start 403 fixture)"; fi
 
   # N4 transient 429 under --auto-bail does NOT bail on the first interval: the

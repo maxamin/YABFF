@@ -358,14 +358,19 @@ impl WafBanDetector {
 
         let mut evidence = Vec::new();
         if wall_403 {
+            // clamp for display: feroxbuster's error tally can briefly run ahead
+            // of the progress-bar request count, pushing the raw ratio past 1.0.
             evidence.push(format!(
                 "403 wall: {:.0}% of {} requests",
-                sig.ratio_403 * 100.0,
+                (sig.ratio_403.min(1.0)) * 100.0,
                 sig.requests
             ));
         }
         if heavy_429 {
-            evidence.push(format!("rate-limited: {:.0}% 429", sig.ratio_429 * 100.0));
+            evidence.push(format!(
+                "rate-limited: {:.0}% 429",
+                (sig.ratio_429.min(1.0)) * 100.0
+            ));
         }
         if sustained {
             evidence.push(format!(

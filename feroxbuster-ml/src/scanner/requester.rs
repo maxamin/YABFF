@@ -31,7 +31,7 @@ use crate::{
     scan_manager::{FeroxScan, ScanStatus},
     statistics::{StatError::Other, StatField::TotalExpected},
     url::FeroxUrl,
-    utils::{logged_request, send_try_recursion_command, should_deny_url},
+    utils::{logged_request, send_try_recursion_command, should_deny_url, status_colorizer},
     HIGH_ERROR_RATIO, UNIQUE_DISTANCE,
 };
 
@@ -255,6 +255,21 @@ impl Requester {
                 .vendor
                 .map(|v| format!(" [{}]", v.name()))
                 .unwrap_or_default();
+            // Surface the verdict directly on stderr. feroxbuster's warn-level
+            // logs go through the env_logger level filter and don't appear by
+            // default, and an enforcement event often precedes a bail/abort that
+            // tears down before indicatif's PROGRESS_PRINTER flushes a queued
+            // line — so an unbuffered eprintln! is the one channel that reliably
+            // reaches the user whether output is a TTY or piped. The log record
+            // below still feeds --debug-log / RUST_LOG consumers.
+            eprintln!(
+                "{} WAF {}{} on {} — {}",
+                status_colorizer("WRN"),
+                style(format!("{:?}", verdict.state)).red(),
+                vendor,
+                self.target_url,
+                verdict.evidence.join("; "),
+            );
             log::warn!(
                 "waf: {:?} (confidence {:.2}){} on {} — {}",
                 verdict.state,
