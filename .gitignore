@@ -24,3 +24,6 @@ feroxbuster-ml/.feroxml/
 # ml-loop runtime artifacts (learned model + scan output written to the repo root)
 model.json
 testoutput
+
+# scan output (ad-hoc --output target used during testing)
+test
