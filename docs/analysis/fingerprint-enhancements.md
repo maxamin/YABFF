@@ -63,6 +63,15 @@ is noise — E1/E2 abstain it in gated mode; Juice Shop's correct REST is likewi
 catch-all the gated path distrusts) and **no same-origin signal** (WebGoat's app
 lives under `/WebGoat/`, so the probe sees only 404s).
 
+> **Base-path discovery (E9) addresses the second case.** When the application is
+> mounted under a context path, `--discover-base-path` (or an explicit
+> `--base-path /WebGoat/`) reroots the whole scan — probe included — under that
+> path, and the discriminating probes are matched **base-relative** so
+> `has("api")` / `root_json` fire there instead of against the empty origin root.
+> WebGoat then fingerprints on real signal rather than 404s. See E9 below. (The
+> catch-all case remains the honest limitation: when a host answers everything
+> with no hard-to-fake discriminator, abstaining is the correct call, not a guess.)
+
 ## 3. Enhancements
 
 All eight are now ✅ **shipped** in the engine and covered by tests; the notes
@@ -244,3 +253,54 @@ richer features lift the whole field. Gated lab verdicts are unchanged (WordPres
 WP, Django → DJANGO, WebGoat → static, Juice Shop / DVWA catch-alls abstained). The
 natural next features (needing a probe-transport change) are favicon hashes and
 JS-framework detection from SPA bundles.
+
+### ✅ E9 — Base-path (application-root) discovery  *(shipped)*
+
+The "no same-origin signal" miss (§2) is not a classifier weakness — it is a
+*probe-placement* one: WebGoat lives under `/WebGoat/`, so every discriminating
+probe at the origin root 404s and the feature vector is all-zero. E9 fixes the
+placement:
+
+- **Discovery** — with `--discover-base-path`, a one-shot probe of generic mount
+  points ([`BASE_PATH_CANDIDATES`](../../ferox-ml-core/src/profiles.rs): `app`,
+  `api`, `admin`, `portal`, …, most-general first) finds the first that answers as
+  a directory; the scan reroots there. An explicit `--base-path /WebGoat/` skips
+  the probe and is the surest fix when the context path is already known.
+- **Base-relative fingerprinting** — because the probe now runs under
+  `…/WebGoat/`, its response URLs are rewritten origin-relative
+  (`/WebGoat/api` → `/api`, `/WebGoat/` → `/`) before `feature_vector`, so
+  `has("api")` and the `root_json` (empty-path) cue fire exactly as they would for
+  a root-mounted app. Without this rewrite the rerooted probe would still look
+  blank — the two halves only work together.
+
+Deliberately **off by default** (a scan stays at the given target unless asked)
+and **skipped in list mode**. Framework-specific mount names are intentionally
+*not* baked into the candidate list — that would be lab-fitting; an unusual
+context path is handled by the explicit `--base-path` override. Covered by
+`base_path_discovery_reroots_and_fingerprints`,
+`explicit_base_path_runs_under_it_without_probing`, and
+`base_path_helpers_normalize_and_strip` in
+[`orchestrator.rs`](../../ferox-ml-core/src/orchestrator.rs).
+
+## Scheduler & persistence hardening (shipped)
+
+Two engine-wide robustness upgrades landed alongside the fingerprint work:
+
+- **Non-stationarity decay** in the Thompson scheduler
+  ([`scheduler.rs`](../../ferox-ml-core/src/scheduler.rs)) — `--scheduler-decay d`
+  (`(0,1]`, default `1.0` = classic stationary) discounts an arm's accumulated
+  Beta evidence toward the uniform prior before each update, so a directory that
+  was productive early but has gone quiet decays and the budget moves on. The
+  per-round reward is already `hits ÷ requests`, i.e. cost-normalized, so cheap
+  productive branches are preferred without a separate cost term.
+- **Versioned model container** ([`orchestrator.rs`](../../ferox-ml-core/src/orchestrator.rs))
+  — the persisted binary model now carries an explicit schema-version byte after
+  its `FXM` magic (`FXM` + `1` is byte-identical to the old `FXM1` header, so v1
+  files load unchanged). A file whose version doesn't match is ignored on load
+  rather than fed to a positional bincode decode that could silently misread a
+  changed DTO. Bump `MODEL_VERSION` on any non-additive DTO change. Guarded by
+  `model_with_unsupported_schema_version_is_ignored`.
+
+The **BM25 corpus build** was also made O(n) (a running token total replaces the
+per-insert re-sum in [`ranking.rs`](../../ferox-ml-core/src/ranking.rs)), so warm
+scans with large discovered corpora no longer pay a quadratic cost per hit.

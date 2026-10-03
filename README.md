@@ -117,6 +117,17 @@ This is what keeps catch-all / soft-404 servers from forcing a confident wrong
 guess. (`KMeansClassifier` reduces to nearest-centroid for a single target and
 exists to seed real clustering when batch-probing many hosts.)
 
+**Base-path discovery.** Some targets don't serve the application at `/` — it
+lives under a context path (`/WebGoat/`, a servlet mount, `/app/`), so a probe at
+the origin root sees only 404s and both fingerprinting and prediction start blind.
+When enabled (`--discover-base-path`, or set it explicitly with
+`--base-path /WebGoat/`), a one-shot probe of generic mount points
+([`BASE_PATH_CANDIDATES`](ferox-ml-core/src/profiles.rs)) finds the application
+root; the whole scan then reroots there, and the probe paths are matched
+**base-relative** so `has("api")` / `root_json` fire under the context path. Off by
+default (a scan stays rooted at the given target unless asked) and skipped in list
+mode.
+
 ### 2. Path prediction — pluggable autocomplete models (`--algo`)
 [`algo.rs`](ferox-ml-core/src/algo.rs) · [`markov.rs`](ferox-ml-core/src/markov.rs) · [`freqtrie.rs`](ferox-ml-core/src/freqtrie.rs) · [`dynsdt.rs`](ferox-ml-core/src/dynsdt.rs) · [`tst.rs`](ferox-ml-core/src/tst.rs)
 
@@ -208,7 +219,15 @@ over the arm's hit-rate (`Ucb1Scheduler` and `RoundRobinScheduler` are
 alternatives via `--ml-scheduler`). The arm's `value()` — the posterior mean —
 **scales how many predictions the directory earns** (25 %–100 % of
 `--ml-predictions`), so productive branches get more guesses and dead ones get the
-floor. The reward is the directory's own base-pass hit-rate.
+floor. The reward is the directory's own base-pass hit-rate (hits ÷ requests), so
+it is already cost-normalized — a branch that needs many requests per hit ranks
+below a cheap one.
+
+For non-stationary targets, `--scheduler-decay <d>` (feroxml; `(0,1]`, default
+`1.0` = classic stationary Thompson) discounts an arm's accumulated evidence
+toward the uniform prior before each update, so a directory that was productive
+early but has gone quiet decays and the budget moves on rather than clinging to a
+stale posterior.
 
 ### 4. Candidate ranking — BM25
 [`ranking.rs`](ferox-ml-core/src/ranking.rs)
@@ -358,6 +377,8 @@ feroxml -u https://target.test --i-have-authorization --model .feroxml/model.jso
 | `--scope <host>` | Extra in-scope hosts (repeatable); out-of-scope URLs are dropped. |
 | `--algo <name>` | Prediction algorithm: `markov` (default) · `trie` · `dynsdt` · `tst` · `auto`. |
 | `--scheduler` / `--classifier` | `thompson\|ucb1\|round_robin` / `nearest_centroid\|kmeans`. |
+| `--scheduler-decay <d>` | Thompson non-stationarity discount in `(0,1]`; `1.0` (default) = stationary. |
+| `--base-path <path>` / `--discover-base-path` | Scan under an app context path (explicit, or auto-probe for it). |
 | `--top-n` / `--max-rounds` / `--max-depth` / `--request-budget` | Loop/budget limits. |
 | `--seed-wordlist <file>` / `--seed-per-round <n>` | Mix baseline paths alongside predictions. |
 | `--ferox-binary <path>` · `--rate-limit` · `--threads` · `-k/--insecure` · `--seed` | Driver settings. |
@@ -369,17 +390,19 @@ is deterministic and CI-friendly. Live behavior is captured into fixtures and
 replayed.
 
 ```bash
-cargo test --workspace            # everything: 674 tests across 26 binaries
-cargo test -p ferox-ml-core       # the engines (85 tests)
+cargo test --workspace            # everything across the three crates
+cargo test -p ferox-ml-core       # the engines
 cargo test -p feroxbuster ml::    # the in-crate ML façade
 cargo test -p feroxbuster --test confusion -- --nocapture   # prints the confusion matrix
+cargo test -p ferox-ml-core --test cross_run_eval           # the across-runs learning guard
 ```
 
 What the suites cover:
 
 | Suite | What it verifies |
 |---|---|
-| `ferox-ml-core` units + [`tests/engines.rs`](ferox-ml-core/tests/engines.rs) | Every engine: all 4 profile classifications, Markov back-off / merge / JSON round-trip, each scheduler's `value()`, BM25 promotion, SimHash & soft-404 signatures, tokenizers, deterministic RNG. |
+| `ferox-ml-core` units + [`tests/engines.rs`](ferox-ml-core/tests/engines.rs) | Every engine: all 4 profile classifications, Markov back-off / merge / JSON round-trip, each scheduler's `value()` (incl. non-stationarity decay), BM25 promotion, SimHash & soft-404 signatures, base-path discovery + the version-guarded binary model format, tokenizers, deterministic RNG. |
+| [`ferox-ml-core/tests/cross_run_eval.rs`](ferox-ml-core/tests/cross_run_eval.rs) | The "carries knowledge across runs" claim: `learn()` on one target writes a model whose carried-over token lets a later `run()` on a **different** target reach a path a cold scan never predicts. |
 | `feroxbuster` lib `ml::` | The façade wiring: confidence gate (incl. catch-all demotion), per-directory budget scaling, init→predict→observe→save round-trip. |
 | [`feroxbuster-ml/tests/lab_fingerprint.rs`](feroxbuster-ml/tests/lab_fingerprint.rs) | Replays real probe captures from the live jsintel labs; asserts correct WordPress ID, static fallback on sparse/404 targets, strict-margin demotion of catch-alls, and online learning on real crawled paths. |
 | [`feroxbuster-ml/tests/confusion.rs`](feroxbuster-ml/tests/confusion.rs) | Builds the confusion matrix, guards clean accuracy ≥ 0.90, and asserts the catch-all-guard enhancement strictly reduces confident errors. |

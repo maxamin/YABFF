@@ -120,6 +120,9 @@ feroxml --learn --targets <file> --i-have-authorization --model <path> [options]
 | `--threads <n>` | feroxbuster threads (default 20). |
 | `--algo <name>` | Prediction algorithm: `markov` (default, best by benchmarked results) · `trie` · `dynsdt` · `tst` · `auto`. |
 | `--scheduler <name>` | `thompson` (default), `ucb1`, `round_robin`. |
+| `--scheduler-decay <d>` | Thompson non-stationarity discount in `(0,1]`; `1.0` (default) = stationary. Lower forgets stale wins faster. |
+| `--base-path <path>` | Scan under an application context path, e.g. `/WebGoat/` (used verbatim, no discovery probe). |
+| `--discover-base-path` | Probe common mount points for the app root and scan under it. Ignored with `--base-path`; skipped in list mode. |
 | `--classifier <name>` | `nearest_centroid` (default), `kmeans`. |
 | `-k, --insecure` | Disable TLS verification (adds `-k` to feroxbuster). |
 | `--extract-links` | Let feroxbuster extract links (mixes crawler results in). |
