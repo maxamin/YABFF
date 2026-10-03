@@ -165,6 +165,31 @@ Soft-404 filtering and per-path de-duplication guard against catch-all runaway, 
 **depth is the primary bound** — unlimited depth against a catch-all/soft-404 server
 that answers every path will not self-terminate.
 
+## 4. Multi-target — a whole list of labs in one run
+
+`feroxbuster --ml-loop` takes a **target list via `--stdin`** (as well as a single
+`-u`), scanning each host in turn. The `--ml-model` and the ranked-pool cache are
+**shared across targets**, so the wordlist tree is ranked once and learning
+accumulates down the list. Two authorized loopback labs — a generic app and a
+WordPress mock — in a single invocation:
+
+```bash
+printf 'http://127.0.0.1:8093\nhttp://127.0.0.1:8091\n' | \
+  feroxbuster --ml-loop --stdin \
+      --ml-list-dir /usr/share/seclists/Discovery/Web-Content/CMS \
+      --ml-list-max 1500 --depth 3 --ml-model model.json
+```
+
+| target | profile | algo | rounds | resources | pool load |
+|--------|---------|------|:---:|:---:|-----------|
+| `:8093` generic   | LIST_DRIVEN | markov | 16 | 7 | **ranked + cached** |
+| `:8091` wordpress | LIST_DRIVEN | markov | 8 | 5 | **from cache** |
+| **aggregate** | — | — | — | **12 (2/2 scanned)** | one shared model |
+
+Total ~65 s: the CMS tree is ranked for the first target and the second loads it
+**from cache**, and both hosts' observations merge into one shared model. A failing
+target is logged and the sweep continues. (Only point `--stdin` at authorized hosts.)
+
 ## How prediction fits in
 
 Each discovered endpoint is fuzzed with the full (recursive) list; before the list
