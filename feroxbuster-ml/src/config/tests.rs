@@ -67,6 +67,17 @@ fn setup_config_test() -> Configuration {
             backup_extensions = [".save"]
             unique = true
             response_size_limit = 8388608
+            ml = true
+            ml_loop = true
+            ml_list_dir = "/some/wordlists"
+            ml_list_chunk = 300
+            ml_list_max = 5000
+            ml_algo = "dynsdt"
+            ml_model = "/some/model.json"
+            ml_order = 5
+            ml_predictions = 40
+            ml_rank = false
+            ml_scheduler = "ucb1"
         "#;
     let tmp_dir = TempDir::new().unwrap();
     let file = tmp_dir.path().join(DEFAULT_CONFIG_NAME);
@@ -139,6 +150,24 @@ fn default_configuration() {
     assert_eq!(config.request_file, String::new());
     assert!(!config.unique);
     assert_eq!(config.response_size_limit, 4194304); // 4MB
+    // ML layer defaults
+    assert!(!config.ml);
+    assert!(!config.ml_loop);
+    assert_eq!(config.ml_list_dir, String::new());
+    assert_eq!(config.ml_list_chunk, ml_list_chunk());
+    assert_eq!(config.ml_list_chunk, 200);
+    assert_eq!(config.ml_list_max, ml_list_max());
+    assert_eq!(config.ml_list_max, 0); // 0 == unlimited
+    assert_eq!(config.ml_algo, ml_algo());
+    assert_eq!(config.ml_algo, "markov");
+    assert_eq!(config.ml_model, String::new());
+    assert_eq!(config.ml_order, ml_order());
+    assert_eq!(config.ml_order, 3);
+    assert_eq!(config.ml_predictions, ml_predictions());
+    assert_eq!(config.ml_predictions, 25);
+    assert!(config.ml_rank); // BM25 re-ranking on by default
+    assert_eq!(config.ml_scheduler, ml_scheduler());
+    assert_eq!(config.ml_scheduler, "thompson");
 }
 
 #[test]
@@ -611,4 +640,199 @@ fn config_reads_unique() {
 fn config_reads_response_size_limit() {
     let config = setup_config_test();
     assert_eq!(config.response_size_limit, 8388608); // 8MB as set in setup_config_test
+}
+
+// ---------------------------------------------------------------------------
+// ML layer — config-file (TOML) reading. Mirrors the per-field convention
+// above; values come from the fixture in `setup_config_test`.
+// ---------------------------------------------------------------------------
+
+#[test]
+/// --ml enabled via config file
+fn config_reads_ml() {
+    let config = setup_config_test();
+    assert!(config.ml);
+}
+
+#[test]
+/// --ml-loop enabled via config file
+fn config_reads_ml_loop() {
+    let config = setup_config_test();
+    assert!(config.ml_loop);
+}
+
+#[test]
+/// --ml-list-dir read from config file
+fn config_reads_ml_list_dir() {
+    let config = setup_config_test();
+    assert_eq!(config.ml_list_dir, "/some/wordlists");
+}
+
+#[test]
+/// --ml-list-chunk read from config file
+fn config_reads_ml_list_chunk() {
+    let config = setup_config_test();
+    assert_eq!(config.ml_list_chunk, 300);
+}
+
+#[test]
+/// --ml-list-max read from config file
+fn config_reads_ml_list_max() {
+    let config = setup_config_test();
+    assert_eq!(config.ml_list_max, 5000);
+}
+
+#[test]
+/// --ml-algo read from config file
+fn config_reads_ml_algo() {
+    let config = setup_config_test();
+    assert_eq!(config.ml_algo, "dynsdt");
+}
+
+#[test]
+/// --ml-model read from config file
+fn config_reads_ml_model() {
+    let config = setup_config_test();
+    assert_eq!(config.ml_model, "/some/model.json");
+}
+
+#[test]
+/// --ml-order read from config file
+fn config_reads_ml_order() {
+    let config = setup_config_test();
+    assert_eq!(config.ml_order, 5);
+}
+
+#[test]
+/// --ml-predictions read from config file
+fn config_reads_ml_predictions() {
+    let config = setup_config_test();
+    assert_eq!(config.ml_predictions, 40);
+}
+
+#[test]
+/// ml_rank = false read from config file (BM25 re-ranking disabled)
+fn config_reads_ml_rank() {
+    let config = setup_config_test();
+    assert!(!config.ml_rank);
+}
+
+#[test]
+/// --ml-scheduler read from config file
+fn config_reads_ml_scheduler() {
+    let config = setup_config_test();
+    assert_eq!(config.ml_scheduler, "ucb1");
+}
+
+// ---------------------------------------------------------------------------
+// ML layer — command-line parsing. Exercises `parse_cli_args` directly so the
+// CLI-only glue (flag presence, --ml-model implying --ml, --no-ml-rank) is
+// covered, not just TOML deserialization.
+// ---------------------------------------------------------------------------
+
+/// Build a `Configuration` from argv exactly as the CLI would, via the real
+/// clap parser + `parse_cli_args`. `--stdin` stands in for a target source.
+fn cli_config(extra: &[&str]) -> Configuration {
+    let mut argv = vec!["feroxbuster", "--stdin"];
+    argv.extend_from_slice(extra);
+    let matches = crate::parser::initialize()
+        .try_get_matches_from(argv)
+        .expect("args should parse");
+    Configuration::parse_cli_args(&matches)
+}
+
+#[test]
+/// with no ML flags, every ML field keeps its default and the layer is off
+fn cli_ml_defaults_when_absent() {
+    let config = cli_config(&[]);
+    assert!(!config.ml);
+    assert!(!config.ml_loop);
+    assert!(config.ml_list_dir.is_empty());
+    assert!(config.ml_model.is_empty());
+    assert_eq!(config.ml_list_chunk, 200);
+    assert_eq!(config.ml_list_max, 0);
+    assert_eq!(config.ml_algo, "markov");
+    assert_eq!(config.ml_order, 3);
+    assert_eq!(config.ml_predictions, 25);
+    assert_eq!(config.ml_scheduler, "thompson");
+    assert!(config.ml_rank);
+}
+
+#[test]
+/// --ml turns the layer on (but not the loop)
+fn cli_ml_flag_sets_ml() {
+    let config = cli_config(&["--ml"]);
+    assert!(config.ml);
+    assert!(!config.ml_loop);
+}
+
+#[test]
+/// --ml-loop sets ml_loop
+fn cli_ml_loop_sets_flag() {
+    let config = cli_config(&["--ml-loop"]);
+    assert!(config.ml_loop);
+}
+
+#[test]
+/// --ml-model sets the path AND implies --ml even without --ml present
+fn cli_ml_model_implies_ml() {
+    let config = cli_config(&["--ml-model", "/tmp/model.json"]);
+    assert_eq!(config.ml_model, "/tmp/model.json");
+    assert!(config.ml, "--ml-model must imply --ml");
+}
+
+#[test]
+/// --ml-list-dir is captured
+fn cli_ml_list_dir() {
+    let config = cli_config(&["--ml-list-dir", "/usr/share/seclists"]);
+    assert_eq!(config.ml_list_dir, "/usr/share/seclists");
+}
+
+#[test]
+/// --ml-list-chunk overrides the default of 200
+fn cli_ml_list_chunk() {
+    let config = cli_config(&["--ml-list-chunk", "500"]);
+    assert_eq!(config.ml_list_chunk, 500);
+}
+
+#[test]
+/// --ml-list-max overrides the default, and 0 is preserved as "unlimited"
+fn cli_ml_list_max() {
+    assert_eq!(cli_config(&["--ml-list-max", "1000"]).ml_list_max, 1000);
+    assert_eq!(cli_config(&["--ml-list-max", "0"]).ml_list_max, 0);
+}
+
+#[test]
+/// every accepted --ml-algo value round-trips into the config
+fn cli_ml_algo_each_value() {
+    for algo in ["auto", "markov", "trie", "dynsdt", "tst"] {
+        assert_eq!(cli_config(&["--ml-algo", algo]).ml_algo, algo);
+    }
+}
+
+#[test]
+/// --ml-order overrides the Markov order default of 3
+fn cli_ml_order() {
+    assert_eq!(cli_config(&["--ml-order", "5"]).ml_order, 5);
+}
+
+#[test]
+/// --ml-predictions overrides the default of 25
+fn cli_ml_predictions() {
+    assert_eq!(cli_config(&["--ml-predictions", "50"]).ml_predictions, 50);
+}
+
+#[test]
+/// every accepted --ml-scheduler value round-trips into the config
+fn cli_ml_scheduler_each_value() {
+    for sched in ["thompson", "ucb1", "round_robin"] {
+        assert_eq!(cli_config(&["--ml-scheduler", sched]).ml_scheduler, sched);
+    }
+}
+
+#[test]
+/// --no-ml-rank disables BM25 re-ranking; absent it stays on
+fn cli_no_ml_rank_disables_rank() {
+    assert!(cli_config(&[]).ml_rank);
+    assert!(!cli_config(&["--no-ml-rank"]).ml_rank);
 }

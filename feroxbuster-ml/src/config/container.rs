@@ -745,7 +745,7 @@ impl Configuration {
 
     /// Given a set of ArgMatches read from the CLI, update and return the default Configuration
     /// settings
-    fn parse_cli_args(args: &ArgMatches) -> Self {
+    pub(super) fn parse_cli_args(args: &ArgMatches) -> Self {
         let mut config = Configuration::default();
 
         update_config_with_num_type_if_present!(&mut config.threads, args, "threads", usize);

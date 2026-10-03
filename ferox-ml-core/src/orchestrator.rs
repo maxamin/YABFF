@@ -862,4 +862,406 @@ mod tests {
         assert!(s.dropped_out_of_scope >= 1, "summary={s:?}");
         assert!(!s.discovered.iter().any(|(u, _)| u.contains("evil.test")));
     }
+
+    // =====================================================================
+    // Behavioral coverage: one test per Config knob exposed through the CLI,
+    // verifying the orchestrator actually honors it (not just that it parses).
+    // All offline via a programmable fake runner.
+    // =====================================================================
+
+    /// A response with an explicit JSON-stream signature (status/len/words/lines)
+    /// and no redirect, so soft-404 signatures can be controlled precisely.
+    fn sig_resp(url: &str, status: u16, len: u64, words: u64, lines: u64) -> FeroxResponse {
+        FeroxResponse {
+            url: url.to_string(),
+            status,
+            content_length: len,
+            word_count: words,
+            line_count: lines,
+            headers: std::collections::HashMap::new(),
+            ..Default::default()
+        }
+    }
+
+    /// A fake runner with full control over the probe and per-arm responses, and
+    /// a record of every call made (for budget/round/prediction assertions).
+    struct ProgRunner {
+        /// responses returned on the fingerprint/probe call (`all_codes == true`)
+        probe: Vec<FeroxResponse>,
+        /// when true, synthesize a soft-404-signature response for each probed
+        /// (random) word so the soft-404 filter learns that signature
+        echo_probe_soft404: bool,
+        /// canned responses per arm URL (round calls)
+        by_arm: std::collections::HashMap<String, Vec<FeroxResponse>>,
+        /// every (url, word-count, all_codes) tuple the orchestrator requested
+        calls: RefCell<Vec<(String, usize, bool)>>,
+    }
+
+    impl ProgRunner {
+        fn new() -> Self {
+            Self {
+                probe: Vec::new(),
+                echo_probe_soft404: false,
+                by_arm: std::collections::HashMap::new(),
+                calls: RefCell::new(Vec::new()),
+            }
+        }
+        fn arm(mut self, url: &str, resps: Vec<FeroxResponse>) -> Self {
+            self.by_arm.insert(url.to_string(), resps);
+            self
+        }
+    }
+
+    impl FeroxRunner for ProgRunner {
+        fn run(&self, args: &FeroxArgs) -> anyhow::Result<Vec<FeroxResponse>> {
+            self.calls
+                .borrow_mut()
+                .push((args.url.clone(), args.words.len(), args.all_codes));
+            if args.all_codes {
+                // fingerprint/probe call
+                if self.echo_probe_soft404 {
+                    let base = args.url.trim_end_matches('/').to_string();
+                    return Ok(args
+                        .words
+                        .iter()
+                        .map(|w| sig_resp(&format!("{base}/{w}"), 200, 10, 2, 1))
+                        .collect());
+                }
+                return Ok(self.probe.clone());
+            }
+            Ok(self.by_arm.get(&args.url).cloned().unwrap_or_default())
+        }
+    }
+
+    /// Write `words` into a one-file wordlist directory under the temp dir and
+    /// return its path. Caller is scanning with `state_dir = ""` (cache disabled).
+    fn write_list_dir(label: &str, words: &[&str]) -> String {
+        let dir = std::env::temp_dir()
+            .join(format!("feroxml-test-{}-{label}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("w.txt"), words.join("\n")).unwrap();
+        dir.to_string_lossy().to_string()
+    }
+
+    /// Base config for list-mode behavioral tests: list dir set, caching off,
+    /// soft-404 filtering off (tests that need it turn it back on).
+    fn list_cfg(list_dir: &str) -> Config {
+        let mut cfg = Config::default();
+        cfg.list_dir = list_dir.to_string();
+        cfg.state_dir = String::new(); // disable the ranked-pool cache
+        cfg.use_soft404_filter = false;
+        cfg
+    }
+
+    #[test]
+    /// use_soft404_filter = true drops responses whose signature matches a learned
+    /// soft-404; a distinct (real) response survives.
+    fn soft404_filter_on_drops_matching_keeps_distinct() {
+        let dir = write_list_dir("s404on", &["ghost", "real"]);
+        let mut runner = ProgRunner::new().arm(
+            "https://x.test/",
+            vec![
+                sig_resp("https://x.test/ghost", 200, 10, 2, 1), // == soft-404 sig
+                sig_resp("https://x.test/real", 200, 500, 50, 10), // distinct
+            ],
+        );
+        runner.echo_probe_soft404 = true;
+
+        let mut cfg = list_cfg(&dir);
+        cfg.use_soft404_filter = true;
+        cfg.max_rounds = 5;
+
+        let s = Campaign::new(cfg, Box::new(runner)).run("https://x.test").unwrap();
+        assert!(
+            s.discovered.iter().any(|(u, _)| u.ends_with("/real")),
+            "real page must survive the filter: {:?}",
+            s.discovered
+        );
+        assert!(
+            !s.discovered.iter().any(|(u, _)| u.ends_with("/ghost")),
+            "ghost (soft-404 signature) must be filtered: {:?}",
+            s.discovered
+        );
+        assert!(s.filtered_soft404 >= 1, "summary={s:?}");
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&dir));
+    }
+
+    #[test]
+    /// use_soft404_filter = false keeps even soft-404-looking responses.
+    fn soft404_filter_off_keeps_everything() {
+        let dir = write_list_dir("s404off", &["ghost", "real"]);
+        let runner = ProgRunner::new().arm(
+            "https://x.test/",
+            vec![
+                sig_resp("https://x.test/ghost", 200, 10, 2, 1),
+                sig_resp("https://x.test/real", 200, 500, 50, 10),
+            ],
+        ); // echo_probe_soft404 = false -> empty probe, nothing learned
+
+        let mut cfg = list_cfg(&dir); // soft404 already off
+        cfg.max_rounds = 5;
+
+        let s = Campaign::new(cfg, Box::new(runner)).run("https://x.test").unwrap();
+        assert!(s.discovered.iter().any(|(u, _)| u.ends_with("/ghost")));
+        assert!(s.discovered.iter().any(|(u, _)| u.ends_with("/real")));
+        assert_eq!(s.filtered_soft404, 0, "summary={s:?}");
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&dir));
+    }
+
+    #[test]
+    /// max_rounds caps the number of feedback-loop rounds exactly.
+    fn max_rounds_caps_the_loop() {
+        let words: Vec<String> = (0..50).map(|i| format!("w{i}")).collect();
+        let wref: Vec<&str> = words.iter().map(|s| s.as_str()).collect();
+        let dir = write_list_dir("rounds", &wref);
+        let mut cfg = list_cfg(&dir); // runner finds nothing
+        cfg.list_chunk_size = 5;
+        cfg.max_rounds = 3;
+        cfg.request_budget = usize::MAX;
+
+        let s = Campaign::new(cfg, Box::new(ProgRunner::new()))
+            .run("https://x.test")
+            .unwrap();
+        assert_eq!(s.rounds, 3, "summary={s:?}");
+        assert_eq!(s.requests_used, 15, "3 rounds * chunk 5; summary={s:?}");
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&dir));
+    }
+
+    #[test]
+    /// request_budget caps total requests, even mid-round.
+    fn request_budget_caps_requests() {
+        let words: Vec<String> = (0..50).map(|i| format!("w{i}")).collect();
+        let wref: Vec<&str> = words.iter().map(|s| s.as_str()).collect();
+        let dir = write_list_dir("budget", &wref);
+        let mut cfg = list_cfg(&dir);
+        cfg.list_chunk_size = 5;
+        cfg.max_rounds = usize::MAX;
+        cfg.request_budget = 12;
+
+        let s = Campaign::new(cfg, Box::new(ProgRunner::new()))
+            .run("https://x.test")
+            .unwrap();
+        assert_eq!(s.requests_used, 12, "must stop exactly at budget; summary={s:?}");
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&dir));
+    }
+
+    #[test]
+    /// list_max_entries caps how much of the pool is ever served (one arm here, so
+    /// total requests == the cap).
+    fn list_max_entries_caps_pool() {
+        let words: Vec<String> = (0..20).map(|i| format!("w{i}")).collect();
+        let wref: Vec<&str> = words.iter().map(|s| s.as_str()).collect();
+        let dir = write_list_dir("listmax", &wref);
+        let mut cfg = list_cfg(&dir);
+        cfg.list_max_entries = 5;
+        cfg.list_chunk_size = 200;
+        cfg.max_rounds = usize::MAX;
+        cfg.request_budget = usize::MAX;
+
+        let s = Campaign::new(cfg, Box::new(ProgRunner::new()))
+            .run("https://x.test")
+            .unwrap();
+        assert_eq!(s.requests_used, 5, "pool capped to 5 entries; summary={s:?}");
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&dir));
+    }
+
+    #[test]
+    /// max_depth bounds how deep recursion enqueues new directory arms.
+    fn max_depth_bounds_recursion() {
+        let dir = write_list_dir("depth", &["x", "y", "z"]);
+        let make = || {
+            ProgRunner::new()
+                .arm("https://x.test/", vec![resp("https://x.test/a", 200, true)])
+                .arm("https://x.test/a/", vec![resp("https://x.test/a/b", 200, true)])
+                .arm(
+                    "https://x.test/a/b/",
+                    vec![resp("https://x.test/a/b/c", 200, false)],
+                )
+        };
+
+        // depth 1: /a found but not expanded, so /a/b never reached
+        let mut shallow = list_cfg(&dir);
+        shallow.max_depth = 1;
+        shallow.max_rounds = 30;
+        let s = Campaign::new(shallow, Box::new(make())).run("https://x.test").unwrap();
+        // resp(.., dir=true) yields a trailing-slash URL, so /a is recorded as /a/
+        assert!(s.discovered.iter().any(|(u, _)| u.ends_with("/a/")));
+        assert!(
+            !s.discovered.iter().any(|(u, _)| u.contains("/a/b")),
+            "depth 1 must not recurse into /a/: {:?}",
+            s.discovered
+        );
+
+        // depth 5: the whole chain is reachable
+        let mut deep = list_cfg(&dir);
+        deep.max_depth = 5;
+        deep.max_rounds = 30;
+        let s = Campaign::new(deep, Box::new(make())).run("https://x.test").unwrap();
+        assert!(s.discovered.iter().any(|(u, _)| u.contains("/a/b/")));
+        assert!(s.discovered.iter().any(|(u, _)| u.ends_with("/a/b/c")));
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&dir));
+    }
+
+    #[test]
+    /// every documented --ml-scheduler value drives a working campaign.
+    fn every_scheduler_discovers() {
+        let dir = write_list_dir("sched", &["p"]);
+        for sched in ["thompson", "ucb1", "round_robin"] {
+            let runner = ProgRunner::new()
+                .arm("https://x.test/", vec![resp("https://x.test/found", 200, false)]);
+            let mut cfg = list_cfg(&dir);
+            cfg.scheduler = sched.to_string();
+            cfg.max_rounds = 5;
+            let s = Campaign::new(cfg, Box::new(runner)).run("https://x.test").unwrap();
+            assert!(
+                s.discovered.iter().any(|(u, _)| u.ends_with("/found")),
+                "scheduler {sched} failed to discover: {:?}",
+                s.discovered
+            );
+        }
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&dir));
+    }
+
+    #[test]
+    /// every documented --ml-algo value builds and drives a working campaign.
+    fn every_algo_discovers() {
+        let dir = write_list_dir("algo", &["p"]);
+        for algo in ["auto", "markov", "trie", "dynsdt", "tst"] {
+            let runner = ProgRunner::new()
+                .arm("https://x.test/", vec![resp("https://x.test/found", 200, false)]);
+            let mut cfg = list_cfg(&dir);
+            cfg.algo = algo.to_string();
+            cfg.max_rounds = 5;
+            let s = Campaign::new(cfg, Box::new(runner)).run("https://x.test").unwrap();
+            assert!(
+                s.discovered.iter().any(|(u, _)| u.ends_with("/found")),
+                "algo {algo} failed to discover: {:?}",
+                s.discovered
+            );
+        }
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&dir));
+    }
+
+    #[test]
+    /// BM25 re-ranking on (ranker=bm25) and off (ranker=none) both discover; this
+    /// is the behavioral side of --no-ml-rank.
+    fn ranker_on_and_off_both_discover() {
+        let dir = write_list_dir("rank", &["p", "q"]);
+        for ranker in ["bm25", "none"] {
+            let runner = ProgRunner::new()
+                .arm("https://x.test/", vec![resp("https://x.test/found", 200, false)]);
+            let mut cfg = list_cfg(&dir);
+            cfg.ranker = ranker.to_string();
+            cfg.max_rounds = 5;
+            let s = Campaign::new(cfg, Box::new(runner)).run("https://x.test").unwrap();
+            assert!(
+                s.discovered.iter().any(|(u, _)| u.ends_with("/found")),
+                "ranker {ranker} failed to discover: {:?}",
+                s.discovered
+            );
+        }
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&dir));
+    }
+
+    #[test]
+    /// top_n (--ml-predictions) bounds the number of predicted words per round in
+    /// prediction mode (seed_per_round = 0).
+    fn top_n_bounds_predictions_per_round() {
+        // REST fixture so the Markov profile seed yields real predictions
+        let mut inner = ProgRunner::new().arm(
+            "https://x.test/api/",
+            vec![resp("https://x.test/api/v1", 200, true)],
+        );
+        inner.probe = vec![
+            resp("https://x.test/api", 200, true),
+            {
+                let mut r = resp("https://x.test/", 200, false);
+                r.headers.insert("content-type".into(), "application/json".into());
+                r
+            },
+        ];
+
+        // thin wrapper that records (word-count, is_probe) for every call
+        struct Rec {
+            inner: ProgRunner,
+            log: std::rc::Rc<RefCell<Vec<(usize, bool)>>>,
+        }
+        impl FeroxRunner for Rec {
+            fn run(&self, args: &FeroxArgs) -> anyhow::Result<Vec<FeroxResponse>> {
+                self.log.borrow_mut().push((args.words.len(), args.all_codes));
+                self.inner.run(args)
+            }
+        }
+
+        let recorder = std::rc::Rc::new(RefCell::new(Vec::new()));
+        let rec = Rec {
+            inner,
+            log: recorder.clone(),
+        };
+
+        let mut cfg = Config::default();
+        cfg.use_soft404_filter = false;
+        cfg.max_rounds = 6;
+        cfg.top_n = 4;
+        cfg.seed_per_round = 0;
+
+        let s = Campaign::new(cfg, Box::new(rec)).run("https://x.test").unwrap();
+        assert!(s.predicted_hits >= 1, "needs real predictions; summary={s:?}");
+        for (n, is_probe) in recorder.borrow().iter() {
+            if !*is_probe {
+                assert!(
+                    *n <= 4,
+                    "a prediction round issued {n} words, exceeding top_n=4"
+                );
+            }
+        }
+    }
+
+    #[test]
+    /// success_codes gate what counts as a hit: a status outside the set is not
+    /// recorded as discovered.
+    fn success_codes_gate_hits() {
+        let dir = write_list_dir("codes", &["p"]);
+        let runner = ProgRunner::new().arm(
+            "https://x.test/",
+            vec![
+                sig_resp("https://x.test/ok", 200, 100, 10, 2),
+                sig_resp("https://x.test/forbidden", 403, 50, 5, 1),
+            ],
+        );
+        let mut cfg = list_cfg(&dir);
+        cfg.success_codes = vec![200]; // 403 no longer a hit
+        cfg.max_rounds = 5;
+        let s = Campaign::new(cfg, Box::new(runner)).run("https://x.test").unwrap();
+        assert!(s.discovered.iter().any(|(u, _)| u.ends_with("/ok")));
+        assert!(
+            !s.discovered.iter().any(|(u, _)| u.ends_with("/forbidden")),
+            "403 must be gated out when not in success_codes: {:?}",
+            s.discovered
+        );
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&dir));
+    }
+
+    #[test]
+    /// model_path (--ml-model) is written after a scan-mode run so learning persists.
+    fn scan_persists_model_to_path() {
+        let dir = write_list_dir("persist", &["p"]);
+        let model = std::env::temp_dir()
+            .join(format!("feroxml-model-{}.json", std::process::id()));
+        let model_path = model.to_string_lossy().to_string();
+        let _ = std::fs::remove_file(&model);
+
+        let runner = ProgRunner::new()
+            .arm("https://x.test/", vec![resp("https://x.test/found", 200, true)]);
+        let mut cfg = list_cfg(&dir);
+        cfg.model_path = model_path.clone();
+        cfg.max_rounds = 5;
+        let _ = Campaign::new(cfg, Box::new(runner)).run("https://x.test").unwrap();
+        assert!(
+            std::path::Path::new(&model_path).exists(),
+            "model should be persisted to --ml-model path"
+        );
+        let _ = std::fs::remove_file(&model);
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&dir));
+    }
 }

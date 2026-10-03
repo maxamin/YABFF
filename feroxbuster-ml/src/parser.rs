@@ -1015,4 +1015,58 @@ mod tests {
         let result = initialize().try_get_matches_from(["feroxbuster", "--update", "-v"]);
         assert!(result.is_err());
     }
+
+    // ----- ML argument parsing (clap level) -----
+
+    #[test]
+    /// --ml-scheduler only accepts its three documented bandits
+    fn ml_scheduler_value_parser() {
+        for ok in ["thompson", "ucb1", "round_robin"] {
+            let r =
+                initialize().try_get_matches_from(["feroxbuster", "--stdin", "--ml-scheduler", ok]);
+            assert!(r.is_ok(), "{ok} should be accepted");
+        }
+        let bad = initialize().try_get_matches_from([
+            "feroxbuster",
+            "--stdin",
+            "--ml-scheduler",
+            "greedy",
+        ]);
+        assert!(bad.is_err(), "unknown scheduler must be rejected by clap");
+    }
+
+    #[test]
+    /// --ml-algo only accepts its five documented algorithms
+    fn ml_algo_value_parser() {
+        for ok in ["auto", "markov", "trie", "dynsdt", "tst"] {
+            let r = initialize().try_get_matches_from(["feroxbuster", "--stdin", "--ml-algo", ok]);
+            assert!(r.is_ok(), "{ok} should be accepted");
+        }
+        let bad =
+            initialize().try_get_matches_from(["feroxbuster", "--stdin", "--ml-algo", "neural"]);
+        assert!(bad.is_err(), "unknown algo must be rejected by clap");
+    }
+
+    #[test]
+    /// the ML flags parse as presence-only (num_args(0)) and the valued ones require a value
+    fn ml_flags_and_valued_args_parse() {
+        // flags
+        assert!(initialize()
+            .try_get_matches_from(["feroxbuster", "--stdin", "--ml"])
+            .is_ok());
+        assert!(initialize()
+            .try_get_matches_from(["feroxbuster", "--stdin", "--ml-loop"])
+            .is_ok());
+        assert!(initialize()
+            .try_get_matches_from(["feroxbuster", "--stdin", "--no-ml-rank"])
+            .is_ok());
+        // a valued arg with its value is fine
+        assert!(initialize()
+            .try_get_matches_from(["feroxbuster", "--stdin", "--ml-predictions", "10"])
+            .is_ok());
+        // ...but missing its value is an error
+        assert!(initialize()
+            .try_get_matches_from(["feroxbuster", "--stdin", "--ml-order"])
+            .is_err());
+    }
 }
