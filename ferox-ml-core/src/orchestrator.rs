@@ -167,6 +167,37 @@ impl Campaign {
             }
         }
 
+        // ---- list-mode catch-all guard ----
+        // A path that cannot exist (a random probe) returning an in-scope "hit"
+        // means the host answers everything. The soft-404 filter can still rescue
+        // the scan IF those bogus hits share one signature — it learns the class
+        // and drops it (e.g. a blanket redirect to a single fixed Location, or an
+        // identical soft-404 shell). But when the random hits each carry a
+        // DISTINCT signature — a wildcard redirect whose Location echoes the
+        // request path, so every path yields a unique fingerprint — the filter can
+        // never generalize, and list mode would record the entire wordlist as
+        // findings. That case is unrecoverable, so abandon the target, the same way
+        // a confirmed WAF ban bails.
+        if list_mode && self.cfg.use_soft404_filter {
+            let random_hit_sigs: Vec<Signature> = probe_resps
+                .iter()
+                .filter(|r| {
+                    random_paths.iter().any(|p| r.url.contains(p.as_str()))
+                        && is_hit(r, &self.cfg)
+                })
+                .map(signature_of)
+                .collect();
+            let distinct: HashSet<Signature> = random_hit_sigs.iter().copied().collect();
+            if random_hit_sigs.len() >= 2 && distinct.len() == random_hit_sigs.len() {
+                let status = random_hit_sigs[0].status;
+                eprintln!(
+                    "[ml-loop] catch-all on {target} — random probes returned distinct {status} \
+                     hits (wildcard/blanket redirect); nothing discoverable, abandoning target"
+                );
+                anyhow::bail!("catch-all");
+            }
+        }
+
         // ---- fingerprint (skipped entirely in list mode) ----
         let (profile, distances) = if list_mode {
             ("LIST_DRIVEN".to_string(), Vec::new())
@@ -912,6 +943,10 @@ mod tests {
         /// when true, synthesize a soft-404-signature response for each probed
         /// (random) word so the soft-404 filter learns that signature
         echo_probe_soft404: bool,
+        /// when true, synthesize a 301 hit with a DISTINCT signature per probed
+        /// word (a wildcard/blanket redirect whose Location echoes the path), to
+        /// exercise the list-mode catch-all guard
+        echo_probe_distinct_hits: bool,
         /// canned responses per arm URL (round calls)
         by_arm: std::collections::HashMap<String, Vec<FeroxResponse>>,
         /// every (url, word-count, all_codes) tuple the orchestrator requested
@@ -923,6 +958,7 @@ mod tests {
             Self {
                 probe: Vec::new(),
                 echo_probe_soft404: false,
+                echo_probe_distinct_hits: false,
                 by_arm: std::collections::HashMap::new(),
                 calls: RefCell::new(Vec::new()),
             }
@@ -946,6 +982,17 @@ mod tests {
                         .words
                         .iter()
                         .map(|w| sig_resp(&format!("{base}/{w}"), 200, 10, 2, 1))
+                        .collect());
+                }
+                if self.echo_probe_distinct_hits {
+                    let base = args.url.trim_end_matches('/').to_string();
+                    return Ok(args
+                        .words
+                        .iter()
+                        .enumerate()
+                        // each probe gets a 301 with a unique body length -> unique
+                        // signature, mimicking a per-path wildcard redirect
+                        .map(|(i, w)| sig_resp(&format!("{base}/{w}"), 301, 100 + i as u64 * 16, 2, 1))
                         .collect());
                 }
                 return Ok(self.probe.clone());
@@ -1008,6 +1055,30 @@ mod tests {
         assert!(
             s.filtered_soft404 <= s.requests_used,
             "filtered must not exceed requests: {s:?}"
+        );
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&dir));
+    }
+
+    #[test]
+    /// A wildcard/blanket-redirect host answers every path (including the random
+    /// probes) with an in-scope hit whose signature is unique per path, so the
+    /// soft-404 filter can never generalize. List mode must detect this and bail
+    /// rather than record the whole wordlist as findings.
+    fn list_mode_bails_on_wildcard_catch_all() {
+        let dir = write_list_dir("catchall", &["admin", "login", "api"]);
+        let mut runner = ProgRunner::new();
+        runner.echo_probe_distinct_hits = true; // random probes -> distinct 301 hits
+
+        let mut cfg = list_cfg(&dir);
+        cfg.use_soft404_filter = true;
+        cfg.max_rounds = 5;
+
+        let err = Campaign::new(cfg, Box::new(runner))
+            .run("https://wildcard.test")
+            .expect_err("a wildcard catch-all must bail");
+        assert!(
+            err.to_string().contains("catch-all"),
+            "unexpected error: {err}"
         );
         let _ = std::fs::remove_dir_all(std::path::Path::new(&dir));
     }
