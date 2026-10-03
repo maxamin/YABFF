@@ -35,7 +35,11 @@ use crate::{
     HIGH_ERROR_RATIO, UNIQUE_DISTANCE,
 };
 
-use super::{policy_data::PolicyData, FeroxScanner, PolicyTrigger};
+use super::{
+    policy_data::PolicyData,
+    waf::{BanSignals, BanState, WafBanDetector},
+    FeroxScanner, PolicyTrigger,
+};
 
 lazy_static! {
     /// make sure to note that this is a std rwlock and not tokio
@@ -72,6 +76,12 @@ pub(super) struct Requester {
     tuning_lock: Mutex<usize>,
 
     policy_triggered: AtomicBool,
+
+    /// WAF-ban detector (see scanner::waf): consumes the same policy triggers and
+    /// scan tallies the requester already computes, attributes a WAF vendor from
+    /// block-class response headers, and classifies transient throttling vs a
+    /// sustained ban. Behind a Mutex for interior mutability (Requester is Arc'd).
+    waf: Mutex<WafBanDetector>,
 }
 
 /// Requester implementation
@@ -101,6 +111,9 @@ impl Requester {
             target_url: scanner.target_url.to_owned(),
             tuning_lock: Mutex::new(0),
             policy_triggered: AtomicBool::new(false),
+            waf: Mutex::new(WafBanDetector::new(
+                scanner.handles.config.requester_policy,
+            )),
         })
     }
 
@@ -215,6 +228,44 @@ impl Requester {
         // No policy trigger found, reset the flag
         atomic_store!(self.policy_data.cooling_down, false, Ordering::Release);
         None
+    }
+
+    /// Classify the current enforcement event as transient throttling vs a
+    /// sustained WAF ban, and log it. Observability layer only: the existing
+    /// tune()/bail() dispatch is unchanged. This reuses the trigger that
+    /// should_enforce_policy() already produced plus the scan's own tallies, so
+    /// it adds no extra requests or counters — just the ban/vendor judgement and
+    /// an explainable reason string.
+    fn note_waf(&self, trigger: PolicyTrigger) {
+        if let Ok(mut detector) = self.waf.lock() {
+            let retry_after = detector.last_retry_after();
+            let signals = BanSignals::from_scan(&self.ferox_scan).with_retry_after(retry_after);
+            let verdict = detector.classify(&signals, Some(trigger));
+
+            if matches!(verdict.state, BanState::Banned | BanState::Bailed)
+                || verdict.confidence >= 0.5
+            {
+                let vendor = verdict
+                    .vendor
+                    .map(|v| format!(" [{}]", v.name()))
+                    .unwrap_or_default();
+                log::warn!(
+                    "waf: {:?} (confidence {:.2}){} on {} — {}",
+                    verdict.state,
+                    verdict.confidence,
+                    vendor,
+                    self.target_url,
+                    verdict.evidence.join("; "),
+                );
+            } else {
+                log::debug!(
+                    "waf: {:?} (confidence {:.2}) on {}",
+                    verdict.state,
+                    verdict.confidence,
+                    self.target_url
+                );
+            }
+        }
     }
 
     /// wrapper for adjust_[up,down] functions, checks error levels to determine adjustment direction
@@ -497,6 +548,7 @@ impl Requester {
                     match self.policy_data.policy {
                         RequesterPolicy::AutoTune => {
                             if let Some(trigger) = self.should_enforce_policy() {
+                                self.note_waf(trigger);
                                 if let Err(e) = self.tune(trigger).await {
                                     // reset cooling_down flag on error to prevent permanent lockout
                                     atomic_store!(
@@ -528,6 +580,7 @@ impl Requester {
                         }
                         RequesterPolicy::AutoBail => {
                             if let Some(trigger) = self.should_enforce_policy() {
+                                self.note_waf(trigger);
                                 if let Err(e) = self.bail(trigger).await {
                                     // reset cooling_down flag on error to prevent permanent lockout
                                     atomic_store!(
@@ -552,6 +605,15 @@ impl Requester {
                     self.handles.config.response_size_limit,
                 )
                 .await;
+
+                // WAF attribution: on block-class responses, let the detector read
+                // vendor markers / Retry-After from headers already fetched. Gated to
+                // 403/429/503 to keep the per-response lock off the hot path.
+                if matches!(ferox_response.status().as_u16(), 403 | 429 | 503) {
+                    if let Ok(mut detector) = self.waf.lock() {
+                        detector.observe_headers(ferox_response.headers());
+                    }
+                }
 
                 // do recursion if appropriate
                 if !self.handles.config.no_recursion && !self.handles.config.force_recursion {
@@ -844,6 +906,7 @@ mod tests {
             rate_limiter: RwLock::new(None),
             policy_data: Default::default(),
             policy_triggered: AtomicBool::new(false),
+            waf: Mutex::new(WafBanDetector::new(RequesterPolicy::Default)),
         };
 
         let ferox_scan = Arc::new(FeroxScan::default());
@@ -873,6 +936,7 @@ mod tests {
             rate_limiter: RwLock::new(None),
             policy_data: Default::default(),
             policy_triggered: AtomicBool::new(false),
+            waf: Mutex::new(WafBanDetector::new(RequesterPolicy::Default)),
         };
 
         increment_errors(requester.handles.clone(), ferox_scan.clone(), 25).await;
@@ -899,6 +963,7 @@ mod tests {
             rate_limiter: RwLock::new(None),
             policy_data: Default::default(),
             policy_triggered: AtomicBool::new(false),
+            waf: Mutex::new(WafBanDetector::new(RequesterPolicy::Default)),
         };
 
         increment_status_codes(
@@ -940,6 +1005,7 @@ mod tests {
             rate_limiter: RwLock::new(None),
             policy_data: Default::default(),
             policy_triggered: AtomicBool::new(false),
+            waf: Mutex::new(WafBanDetector::new(RequesterPolicy::Default)),
         };
 
         increment_status_codes(
@@ -996,6 +1062,7 @@ mod tests {
             rate_limiter: RwLock::new(None),
             policy_data: Default::default(),
             policy_triggered: AtomicBool::new(false),
+            waf: Mutex::new(WafBanDetector::new(RequesterPolicy::Default)),
         };
 
         requester.bail(PolicyTrigger::Errors).await.unwrap();
@@ -1031,6 +1098,7 @@ mod tests {
             rate_limiter: RwLock::new(None),
             policy_data: Default::default(),
             policy_triggered: AtomicBool::new(false),
+            waf: Mutex::new(WafBanDetector::new(RequesterPolicy::Default)),
         };
 
         let result = requester.bail(PolicyTrigger::Status403).await;
@@ -1054,6 +1122,7 @@ mod tests {
             rate_limiter: RwLock::new(None),
             policy_data: Default::default(),
             policy_triggered: AtomicBool::new(false),
+            waf: Mutex::new(WafBanDetector::new(RequesterPolicy::Default)),
         };
 
         requester
@@ -1079,6 +1148,7 @@ mod tests {
             rate_limiter: RwLock::new(None),
             policy_data: PolicyData::new(RequesterPolicy::AutoBail, 7),
             policy_triggered: AtomicBool::new(false),
+            waf: Mutex::new(WafBanDetector::new(RequesterPolicy::Default)),
         });
 
         let start = Instant::now();
@@ -1107,6 +1177,7 @@ mod tests {
             rate_limiter: RwLock::new(None),
             policy_data: PolicyData::new(RequesterPolicy::AutoBail, 7),
             policy_triggered: AtomicBool::new(false),
+            waf: Mutex::new(WafBanDetector::new(RequesterPolicy::Default)),
         };
 
         requester.policy_data.set_reqs_sec(400);
@@ -1146,6 +1217,7 @@ mod tests {
             rate_limiter: RwLock::new(Some(limiter)),
             policy_data: PolicyData::new(RequesterPolicy::AutoBail, 7),
             policy_triggered: AtomicBool::new(false),
+            waf: Mutex::new(WafBanDetector::new(RequesterPolicy::Default)),
         };
 
         requester.policy_data.set_reqs_sec(400);
@@ -1184,6 +1256,7 @@ mod tests {
             rate_limiter: RwLock::new(None),
             policy_data: PolicyData::new(RequesterPolicy::AutoBail, 7),
             policy_triggered: AtomicBool::new(false),
+            waf: Mutex::new(WafBanDetector::new(RequesterPolicy::Default)),
         };
 
         requester.policy_data.set_reqs_sec(400);
@@ -1213,6 +1286,7 @@ mod tests {
             rate_limiter: RwLock::new(None),
             policy_data: PolicyData::new(RequesterPolicy::AutoBail, 7),
             policy_triggered: AtomicBool::new(false),
+            waf: Mutex::new(WafBanDetector::new(RequesterPolicy::Default)),
         };
 
         assert!(!requester.too_many_status_errors(PolicyTrigger::Errors));
@@ -1257,6 +1331,7 @@ mod tests {
             rate_limiter: RwLock::new(Some(limiter)),
             policy_data: PolicyData::new(RequesterPolicy::AutoBail, 7),
             policy_triggered: AtomicBool::new(false),
+            waf: Mutex::new(WafBanDetector::new(RequesterPolicy::Default)),
         };
 
         requester.set_rate_limiter(Some(200)).await.unwrap();
@@ -1303,6 +1378,7 @@ mod tests {
             rate_limiter: RwLock::new(Some(limiter)),
             policy_data: PolicyData::new(RequesterPolicy::AutoTune, 4),
             policy_triggered: AtomicBool::new(false),
+            waf: Mutex::new(WafBanDetector::new(RequesterPolicy::Default)),
         };
 
         let start = Instant::now();
@@ -1383,6 +1459,7 @@ mod tests {
             rate_limiter: RwLock::new(None),
             policy_data: PolicyData::new(RequesterPolicy::AutoTune, 7),
             policy_triggered: AtomicBool::new(false),
+            waf: Mutex::new(WafBanDetector::new(RequesterPolicy::Default)),
         };
 
         // Set policy_triggered to true (as if auto-tune was triggered)
@@ -1433,6 +1510,7 @@ mod tests {
             rate_limiter: RwLock::new(None),
             policy_data: PolicyData::new(RequesterPolicy::AutoTune, 7),
             policy_triggered: AtomicBool::new(false),
+            waf: Mutex::new(WafBanDetector::new(RequesterPolicy::Default)),
         };
 
         // Add many errors globally (simulating previous scans)
@@ -1562,6 +1640,7 @@ mod tests {
             rate_limiter: RwLock::new(Some(Requester::build_a_bucket(50).unwrap())),
             policy_data,
             policy_triggered: AtomicBool::new(true),
+            waf: Mutex::new(WafBanDetector::new(RequesterPolicy::Default)),
         };
 
         // Set remove_limit flag
@@ -1608,6 +1687,7 @@ mod tests {
             rate_limiter: RwLock::new(Some(Requester::build_a_bucket(100).unwrap())),
             policy_data,
             policy_triggered: AtomicBool::new(false),
+            waf: Mutex::new(WafBanDetector::new(RequesterPolicy::Default)),
         };
 
         // Verify initial limiter is set
@@ -1670,6 +1750,7 @@ mod tests {
             rate_limiter: RwLock::new(Some(Requester::build_a_bucket(100).unwrap())),
             policy_data,
             policy_triggered: AtomicBool::new(false),
+            waf: Mutex::new(WafBanDetector::new(RequesterPolicy::Default)),
         };
 
         // Step 1: Trigger auto-tune due to errors

@@ -6,7 +6,12 @@ mod tests;
 mod limit_heap;
 mod policy_data;
 mod requester;
+mod waf;
 
 pub use self::ferox_scanner::{FeroxScanner, RESPONSES};
 pub use self::init::initialize;
 pub use self::utils::PolicyTrigger;
+pub use self::waf::{
+    parse_retry_after, BanSignals, BanState, BanVerdict, VendorAttributor, WafBanDetector,
+    WafReaction, WafVendor,
+};
