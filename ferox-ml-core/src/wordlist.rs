@@ -75,10 +75,16 @@ pub fn load_list_dir(dir: &str, cap: usize) -> std::io::Result<Vec<String>> {
     Ok(capped(rank_entries(&collect_files(dir)), cap))
 }
 
-/// Recursively collect every file under `dir`, in sorted full-path order.
-fn collect_files(dir: &str) -> Vec<std::path::PathBuf> {
+/// Recursively collect every file under `path`, in sorted full-path order.
+/// If `path` is a single file, it is used directly; if it is a directory, the
+/// whole tree beneath it is walked.
+fn collect_files(path: &str) -> Vec<std::path::PathBuf> {
+    let root = std::path::PathBuf::from(path);
+    if root.is_file() {
+        return vec![root];
+    }
     let mut files: Vec<std::path::PathBuf> = Vec::new();
-    let mut stack = vec![std::path::PathBuf::from(dir)];
+    let mut stack = vec![root];
     while let Some(d) = stack.pop() {
         let Ok(rd) = std::fs::read_dir(&d) else {
             continue; // unreadable directory: skip
@@ -347,6 +353,28 @@ mod tests {
         // cap == 0 means unlimited (every entry)
         let all = load_list_dir(dir.to_str().unwrap(), 0).unwrap();
         assert_eq!(all, ["api", "admin", "login", "users"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_list_dir_accepts_a_single_file() {
+        // --ml-list-dir may point at one wordlist file, not only a directory.
+        let dir = std::env::temp_dir().join(format!("ferox-single-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let file = dir.join("one.txt");
+        std::fs::write(&file, "admin\n# comment\nlogin\n\napi\napi\n").unwrap();
+        // single file -> one "document": every unique entry has df 1, so the
+        // order is len asc then lex (api, admin, login), and the dup is collapsed.
+        let pool = load_list_dir(file.to_str().unwrap(), 0).unwrap();
+        assert_eq!(pool, ["api", "admin", "login"]);
+        // caching works for a file path too (keyed on the path + its signature)
+        let cache = dir.join("cache");
+        std::fs::create_dir_all(&cache).unwrap();
+        let (f, c) = (file.to_str().unwrap(), cache.to_str().unwrap());
+        let (_p1, hit1) = load_list_dir_cached(f, 0, c).unwrap();
+        assert!(!hit1, "first load must be a miss");
+        let (_p2, hit2) = load_list_dir_cached(f, 0, c).unwrap();
+        assert!(hit2, "second load of the unchanged file must hit the cache");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

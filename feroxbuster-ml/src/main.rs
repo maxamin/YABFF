@@ -1033,7 +1033,7 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
             );
         }
         log::info!(
-            "ml-loop list mode: dir={} (recursive), max-depth={}, chunk={}, max-entries={}",
+            "ml-loop list mode: path={} (file or recursive dir), max-depth={}, chunk={}, max-entries={}",
             cfg.list_dir,
             if cfg.max_depth == usize::MAX { "unlimited".to_string() } else { cfg.max_depth.to_string() },
             cfg.list_chunk_size,

@@ -225,9 +225,15 @@ impl Campaign {
                 &self.cfg.state_dir,
             )
             .unwrap_or_default();
+            let source_kind = if std::path::Path::new(&self.cfg.list_dir).is_file() {
+                "file"
+            } else {
+                "recursive dir"
+            };
             eprintln!(
-                "[ml-loop] list pool loaded: {} entries (recursive, {}) from {}",
+                "[ml-loop] list pool loaded: {} entries ({}, {}) from {}",
                 loaded.len(),
+                source_kind,
                 if from_cache { "from cache" } else { "ranked + cached" },
                 self.cfg.list_dir
             );
