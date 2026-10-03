@@ -280,6 +280,24 @@ impl VendorAttributor {
     }
 }
 
+/// Build a reqwest [`HeaderMap`] from a plain `String` map (lossy: entries whose
+/// name or value isn't valid HTTP are skipped). Lets callers whose responses
+/// carry headers as a `HashMap<String, String>` — e.g. the --ml-loop in-process
+/// runner's `FeroxResponse` — reuse the same vendor attribution and parsing.
+pub fn header_map_from(pairs: &std::collections::HashMap<String, String>) -> HeaderMap {
+    use reqwest::header::{HeaderName, HeaderValue};
+    let mut h = HeaderMap::new();
+    for (k, v) in pairs {
+        if let (Ok(name), Ok(val)) = (
+            HeaderName::from_bytes(k.as_bytes()),
+            HeaderValue::from_str(v),
+        ) {
+            h.append(name, val);
+        }
+    }
+    h
+}
+
 /// Parse a `Retry-After` header as integer seconds (HTTP-date form is ignored;
 /// the caller falls back to its own backoff when this is `None`).
 pub fn parse_retry_after(headers: &HeaderMap) -> Option<u64> {

@@ -257,6 +257,31 @@ PY
       && ok "N5 AutoTune never bails on 403 wall (rc=$n5rc, $n5/$WAF_WORDS)" \
       || bad "N5 AutoTune no-bail" "rc=$n5rc scanned $n5/$WAF_WORDS (looks like an early cancel)"
   else skip "N5 (could not start 403 fixture)"; fi
+
+  # ---- ml-loop path WAF wiring (the in-process runner, not the requester) ----
+  MLW="$TMP/mlwl"; mkdir -p "$MLW"; seq 1 300 | sed 's#^#p#' > "$MLW/w.txt"
+
+  # MW1 ml-loop vs 403 wall -> detector aborts THIS target; sweep would continue
+  if start_fixture 8471 403; then
+    printf 'http://127.0.0.1:8471/\n' | timeout 40 "$BIN" --ml-loop --stdin \
+      --ml-list-dir "$MLW" --ml-list-max 0 --depth 1 --threads 10 \
+      -s 200,301,302,403,429 >"$TMP/mw1.out" 2>&1
+    vis=0;  grep -qiE 'WAF +(Banned|Bailed)' "$TMP/mw1.out" && vis=1
+    abrt=0; grep -qiE 'target .*failed: WAF ban' "$TMP/mw1.out" && abrt=1
+    { [ "$vis" = 1 ] && [ "$abrt" = 1 ]; } \
+      && ok "MW1 ml-loop 403-wall -> WAF ban aborts target" \
+      || bad "MW1 ml-loop WAF ban" "verdict_visible=$vis target_aborted=$abrt"
+  else skip "MW1 (could not start 403 fixture)"; fi
+
+  # MW2 ml-loop vs 429 -> transient RateLimited, backs off (no instant abort)
+  if start_fixture 8472 429; then
+    printf 'http://127.0.0.1:8472/\n' | timeout 20 "$BIN" --ml-loop --stdin \
+      --ml-list-dir "$MLW" --ml-list-max 0 --depth 1 --threads 10 \
+      -s 200,301,302,403,429 >"$TMP/mw2.out" 2>&1
+    grep -qiE 'WAF +RateLimited' "$TMP/mw2.out" \
+      && ok "MW2 ml-loop 429 -> transient RateLimited backoff" \
+      || bad "MW2 ml-loop transient" "no RateLimited verdict seen"
+  else skip "MW2 (could not start 429 fixture)"; fi
 fi
 
 # ---------------------------------------------------------------- summary

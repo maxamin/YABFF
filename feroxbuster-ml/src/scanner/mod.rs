@@ -12,6 +12,6 @@ pub use self::ferox_scanner::{FeroxScanner, RESPONSES};
 pub use self::init::initialize;
 pub use self::utils::PolicyTrigger;
 pub use self::waf::{
-    parse_retry_after, BanSignals, BanState, BanVerdict, VendorAttributor, WafBanDetector,
-    WafReaction, WafVendor,
+    header_map_from, parse_retry_after, BanSignals, BanState, BanVerdict, VendorAttributor,
+    WafBanDetector, WafReaction, WafVendor,
 };

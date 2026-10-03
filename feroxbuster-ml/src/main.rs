@@ -30,12 +30,14 @@ use feroxbuster::{
         FiltersHandler, Handles, ScanHandler, StatsHandler, Tasks, TermInputHandler,
         TermOutHandler, SCAN_COMPLETE,
     },
+    config::RequesterPolicy,
     filters, heuristics, logger,
     progress::PROGRESS_PRINTER,
     scan_manager::{self, ScanType},
     scanner,
-    utils::{fmt_err, open_file, slugify_filename},
-    SECONDARY_WORDLIST,
+    scanner::{header_map_from, BanSignals, BanState, PolicyTrigger, WafBanDetector},
+    utils::{fmt_err, open_file, slugify_filename, status_colorizer},
+    HIGH_ERROR_RATIO, SECONDARY_WORDLIST,
 };
 #[cfg(not(target_os = "windows"))]
 use feroxbuster::{utils::set_open_file_limit, DEFAULT_OPEN_FILE_LIMIT};
@@ -789,6 +791,11 @@ struct InProcessRunner {
     rt: tokio::runtime::Runtime,
     concurrency: usize,
     status_codes: Vec<u16>,
+    /// WAF-ban detector for this target (fresh per target, since the runner is
+    /// rebuilt per target). Interior mutability: FeroxRunner::run takes &self.
+    waf: std::cell::RefCell<WafBanDetector>,
+    /// cumulative (requests, 403s, 429s) seen for this target, feeding the detector
+    waf_tally: std::cell::RefCell<(u64, usize, usize)>,
 }
 
 impl ferox_ml_core::ferox::FeroxRunner for InProcessRunner {
@@ -844,6 +851,79 @@ impl ferox_ml_core::ferox::FeroxRunner for InProcessRunner {
                 .collect()
                 .await
         });
+
+        // ---- WAF-ban detection on this batch (ml-loop path) ----
+        // The in-process runner bypasses the normal requester, so detection is
+        // wired here: tally 403/429 across the target, attribute a vendor from
+        // block-class headers, classify transient-vs-ban with the same thresholds
+        // the requester uses, and react — a confirmed ban returns Err so the
+        // orchestrator aborts THIS target (run_ml_loop logs it and moves to the
+        // next); a transient block backs off (honoring Retry-After) and continues.
+        {
+            let (requests, n403, n429) = {
+                let mut tally = self.waf_tally.borrow_mut();
+                for r in &responses {
+                    tally.0 += 1;
+                    match r.status {
+                        403 => tally.1 += 1,
+                        429 => tally.2 += 1,
+                        _ => {}
+                    }
+                }
+                *tally
+            };
+            {
+                let mut detector = self.waf.borrow_mut();
+                for r in &responses {
+                    if matches!(r.status, 403 | 429 | 503) {
+                        detector.observe_headers(&header_map_from(&r.headers));
+                    }
+                }
+            }
+            let floor = self.concurrency.max(50);
+            let trigger = if (requests as usize) >= floor && requests > 0 {
+                let rf = requests as f64;
+                if n403 as f64 / rf >= HIGH_ERROR_RATIO {
+                    Some(PolicyTrigger::Status403)
+                } else if n429 as f64 / rf >= HIGH_ERROR_RATIO / 3.0 {
+                    Some(PolicyTrigger::Status429)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            if let Some(trigger) = trigger {
+                let (verdict, retry_after) = {
+                    let mut detector = self.waf.borrow_mut();
+                    let retry = detector.last_retry_after();
+                    let sig = BanSignals::new(requests, n403, n429, 0).with_retry_after(retry);
+                    (detector.classify(&sig, Some(trigger)), retry)
+                };
+                let vendor = verdict
+                    .vendor
+                    .map(|v| format!(" [{}]", v.name()))
+                    .unwrap_or_default();
+                eprintln!(
+                    "{} WAF {:?}{} on {} — {}",
+                    status_colorizer("WRN"),
+                    verdict.state,
+                    vendor,
+                    args.url,
+                    verdict.evidence.join("; "),
+                );
+                if matches!(verdict.state, BanState::Banned | BanState::Bailed) {
+                    // evidence already names the vendor; don't append it twice
+                    bail!("WAF ban on {} — {}", args.url, verdict.evidence.join("; "));
+                }
+                // transient: honor Retry-After (bounded), else a short pause
+                let ms = match retry_after {
+                    Some(s) => s.saturating_mul(1000).min(30_000),
+                    None => 1_000,
+                };
+                std::thread::sleep(std::time::Duration::from_millis(ms));
+            }
+        }
 
         // mimic feroxbuster's reported set: drop 404/connection errors, and (unless
         // the probe asked for all codes) keep only the configured success codes.
@@ -1020,6 +1100,10 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
             rt,
             concurrency,
             status_codes: config.status_codes.clone(),
+            // AutoBail semantics: a confirmed ban aborts this target (the sweep
+            // continues to the next); a transient block just backs off.
+            waf: std::cell::RefCell::new(WafBanDetector::new(RequesterPolicy::AutoBail)),
+            waf_tally: std::cell::RefCell::new((0, 0, 0)),
         };
         if multi {
             println!("\n=== [{}/{}] {} ===", i + 1, targets.len(), target);
