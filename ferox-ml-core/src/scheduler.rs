@@ -25,14 +25,28 @@ pub struct ThompsonScheduler {
     arms: HashMap<String, Beta>,
     order: Vec<String>, // insertion order, for stable tie-breaking
     rng: Rng,
+    /// Non-stationarity discount in `(0, 1]`. Before each update the evidence an
+    /// arm has accumulated (its Beta mass above the uniform prior) is scaled by
+    /// this factor, so old rewards fade and the posterior tracks the arm's
+    /// *recent* yield. `1.0` disables decay (stationary Beta — the classic
+    /// Thompson sampler), which is the default and keeps historical behavior.
+    decay: f64,
 }
 
 impl ThompsonScheduler {
     pub fn new(seed: u64) -> Self {
+        Self::with_decay(seed, 1.0)
+    }
+
+    /// Thompson sampler with a non-stationarity `decay` in `(0, 1]` (see the
+    /// [`decay`](ThompsonScheduler::decay) field). Values outside the range are
+    /// clamped; `1.0` is the stationary default.
+    pub fn with_decay(seed: u64, decay: f64) -> Self {
         Self {
             arms: HashMap::new(),
             order: Vec::new(),
             rng: Rng::new(seed),
+            decay: decay.clamp(f64::MIN_POSITIVE, 1.0),
         }
     }
 
@@ -61,7 +75,15 @@ impl Scheduler for ThompsonScheduler {
 
     fn update(&mut self, arm: &str, reward: f64) {
         let r = reward.clamp(0.0, 1.0);
+        let decay = self.decay;
         if let Some(b) = self.arms.get_mut(arm) {
+            // Discount prior evidence toward the uniform Beta(1,1) prior before
+            // folding in the new reward, so a stale "productive" arm decays once
+            // it stops paying off. decay == 1.0 => no discount (classic Thompson).
+            if decay < 1.0 {
+                b.alpha = 1.0 + (b.alpha - 1.0) * decay;
+                b.beta = 1.0 + (b.beta - 1.0) * decay;
+            }
             b.alpha += r;
             b.beta += 1.0 - r;
         }
@@ -226,12 +248,20 @@ impl Scheduler for RoundRobinScheduler {
     }
 }
 
-/// Build the scheduler named in the config.
+/// Build the scheduler named in the config (stationary Thompson — no decay).
 pub fn build(name: &str, seed: u64) -> Box<dyn Scheduler + Send + Sync> {
+    build_decayed(name, seed, 1.0)
+}
+
+/// Build the scheduler named in the config, applying a non-stationarity `decay`
+/// in `(0, 1]` to the Thompson sampler (ignored by UCB1 / round-robin, which have
+/// no Beta posterior to discount). `decay == 1.0` is the stationary default and is
+/// what [`build`] uses.
+pub fn build_decayed(name: &str, seed: u64, decay: f64) -> Box<dyn Scheduler + Send + Sync> {
     match name {
         "ucb1" => Box::new(Ucb1Scheduler::new()),
         "round_robin" => Box::new(RoundRobinScheduler::new()),
-        _ => Box::new(ThompsonScheduler::new(seed)),
+        _ => Box::new(ThompsonScheduler::with_decay(seed, decay)),
     }
 }
 
@@ -267,6 +297,61 @@ mod tests {
             }
         }
         assert!(good > 180, "good chosen {good}/200 times");
+    }
+
+    #[test]
+    fn decay_lets_the_posterior_track_a_regime_change() {
+        // An arm that paid off early then goes cold. With decay, its value
+        // estimate should collapse toward the recent (zero) yield; without decay
+        // the long productive history keeps it high.
+        let warm = || {
+            let mut s = ThompsonScheduler::with_decay(1, 0.5);
+            for _ in 0..20 {
+                s.add_arm("a");
+                s.update("a", 1.0);
+            }
+            s
+        };
+        let stationary = || {
+            let mut s = ThompsonScheduler::new(1);
+            for _ in 0..20 {
+                s.add_arm("a");
+                s.update("a", 1.0);
+            }
+            s
+        };
+
+        let mut decayed = warm();
+        let mut flat = stationary();
+        // regime change: the arm now returns nothing for a while
+        for _ in 0..10 {
+            decayed.update("a", 0.0);
+            flat.update("a", 0.0);
+        }
+
+        // the decayed estimate has forgotten the stale wins and dropped much lower
+        assert!(
+            decayed.value("a") < flat.value("a") - 0.2,
+            "decayed={} flat={}",
+            decayed.value("a"),
+            flat.value("a")
+        );
+        assert!(decayed.value("a") < 0.35, "decayed should track recent cold streak: {}", decayed.value("a"));
+    }
+
+    #[test]
+    fn decay_defaults_to_stationary() {
+        // build() and ThompsonScheduler::new() must be the classic (undiscounted)
+        // sampler, so default behavior is unchanged.
+        let mut a = ThompsonScheduler::new(7);
+        let mut b = ThompsonScheduler::with_decay(7, 1.0);
+        for _ in 0..5 {
+            a.add_arm("x");
+            b.add_arm("x");
+            a.update("x", 1.0);
+            b.update("x", 1.0);
+        }
+        assert_eq!(a.value("x"), b.value("x"));
     }
 
     #[test]

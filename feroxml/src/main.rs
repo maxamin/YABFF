@@ -82,6 +82,22 @@ struct Cli {
     #[arg(long)]
     scheduler: Option<String>,
 
+    /// Thompson non-stationarity discount in (0, 1]. Lower = the bandit forgets
+    /// stale wins faster and tracks a directory's recent yield. 1.0 = classic
+    /// stationary sampler (default).
+    #[arg(long = "scheduler-decay")]
+    scheduler_decay: Option<f64>,
+
+    /// Application base/context path to scan under, e.g. /WebGoat/. Use when the
+    /// app is not served at the origin root; the whole scan runs under this path.
+    #[arg(long = "base-path")]
+    base_path: Option<String>,
+
+    /// Probe common mount points (/app, /api, ...) for the application root before
+    /// fingerprinting, and scan under it if found. Ignored when --base-path is set.
+    #[arg(long = "discover-base-path")]
+    discover_base_path: bool,
+
     /// Classifier: nearest_centroid | kmeans.
     #[arg(long)]
     classifier: Option<String>,
@@ -143,6 +159,15 @@ fn build_config(cli: &Cli) -> anyhow::Result<Config> {
     }
     if cli.insecure {
         cfg.tls_verify = false;
+    }
+    if let Some(v) = cli.scheduler_decay {
+        cfg.scheduler_decay = v;
+    }
+    if let Some(v) = &cli.base_path {
+        cfg.base_path = v.clone();
+    }
+    if cli.discover_base_path {
+        cfg.discover_base_path = true;
     }
     if let Some(v) = &cli.scheduler {
         cfg.scheduler = v.clone();

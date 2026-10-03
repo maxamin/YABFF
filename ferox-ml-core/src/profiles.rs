@@ -206,6 +206,36 @@ pub const PROBE_PATHS: [&str; 22] = [
     "static/admin",         // Django admin static tree
 ];
 
+/// Generic application-mount-point candidates for base-path discovery.
+///
+/// Many targets don't serve the app at `/` — it lives under a context path
+/// (`/app/`, `/api/`, a servlet context, …), so a probe at the origin root sees
+/// only 404s and both fingerprinting and prediction start blind (the WebGoat-
+/// under-`/WebGoat/` failure mode in `docs/analysis/fingerprint-enhancements.md`).
+/// When base-path discovery is enabled, these generic mount points are probed
+/// once; the first that answers as a directory becomes the effective scan root.
+/// Ordered most-general first so a broad mount wins over a nested one. Deliberately
+/// framework-agnostic — an unusual context path is handled by the explicit
+/// `base_path` config override instead of being baked in here.
+pub const BASE_PATH_CANDIDATES: [&str; 16] = [
+    "app",
+    "application",
+    "apps",
+    "api",
+    "admin",
+    "portal",
+    "dashboard",
+    "web",
+    "www",
+    "public",
+    "site",
+    "cms",
+    "v1",
+    "v2",
+    "latest",
+    "current",
+];
+
 /// The framework profiles the fingerprinting engine can assign.
 pub const PROFILES: [&str; 7] = [
     "REST_API",

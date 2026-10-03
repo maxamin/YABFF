@@ -22,6 +22,14 @@ pub struct Config {
     pub predictor: String,
     /// `thompson` (default) | `ucb1` | `round_robin`
     pub scheduler: String,
+    /// Non-stationarity discount for the Thompson scheduler, in `(0, 1]`. Before
+    /// each reward update an arm's accumulated evidence is scaled by this factor,
+    /// so a directory that was productive early but has gone quiet decays and the
+    /// budget moves on. `1.0` (default) is the classic stationary sampler; a value
+    /// like `0.9` makes the bandit track a target's *recent* yield. Ignored by the
+    /// `ucb1` / `round_robin` schedulers.
+    #[serde(default = "default_scheduler_decay")]
+    pub scheduler_decay: f64,
     /// `bm25` (default) | `none`
     pub ranker: String,
     /// drop soft-404 / template responses before they reach the reward signal
@@ -65,6 +73,20 @@ pub struct Config {
     pub seed: u64,
     pub scope: Vec<String>,
 
+    // --- base-path (application context root) discovery ---
+    /// Explicit application base path to scan under, e.g. `/WebGoat/`. When set it
+    /// is used verbatim (joined onto the target) and no discovery probe runs — the
+    /// surest fix for an app that isn't served at the origin root. Empty = none.
+    #[serde(default)]
+    pub base_path: String,
+    /// Auto-probe [`crate::profiles::BASE_PATH_CANDIDATES`] for the application
+    /// root before fingerprinting, so a target whose app lives under a context path
+    /// (not `/`) is fingerprinted and scanned there instead of blind at the origin.
+    /// Off by default (a scan stays rooted at the given target unless asked);
+    /// ignored in list mode and when `base_path` is set explicitly.
+    #[serde(default)]
+    pub discover_base_path: bool,
+
     // --- persistence / learning ---
     pub state_dir: String,
     /// Path to a learned Markov model (JSON). In scan mode, if it exists it is
@@ -96,6 +118,10 @@ fn default_list_chunk() -> usize {
     200
 }
 
+fn default_scheduler_decay() -> f64 {
+    1.0
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -103,6 +129,7 @@ impl Default for Config {
             algo: "markov".into(),
             predictor: "ppm".into(),
             scheduler: "thompson".into(),
+            scheduler_decay: default_scheduler_decay(),
             ranker: "bm25".into(),
             use_soft404_filter: true,
             top_n: 12,
@@ -124,6 +151,8 @@ impl Default for Config {
             seed_per_round: 0,
             seed: 1337,
             scope: vec![],
+            base_path: String::new(),
+            discover_base_path: false,
             state_dir: ".feroxml".into(),
             model_path: String::new(),
             model_export_json: String::new(),

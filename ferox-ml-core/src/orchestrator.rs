@@ -48,10 +48,23 @@ const SAVE_EVERY_ROUNDS: usize = 500;
 
 /// Write `model` to `model_path` (no-op if unset), creating parent dirs. Shared
 /// by the periodic flush, the cooperative-stop exit, and the end-of-run save.
-/// Magic header for the binary (bincode) model container. A persisted file that
-/// does not start with these bytes is treated as legacy JSON on load, so existing
+/// Family magic for the binary (bincode) model container, followed by a single
+/// [`MODEL_VERSION`] byte and then the bincode payload. A persisted file that does
+/// not start with these bytes is treated as legacy JSON on load, so existing
 /// `model.json` files keep working after the switch to the binary default.
-pub(crate) const MODEL_MAGIC: &[u8; 4] = b"FXM1";
+pub(crate) const MODEL_MAGIC: &[u8; 3] = b"FXM";
+
+/// On-disk schema version for the bincode payload. Bincode is positional: if a
+/// model DTO's shape changes, an old file can still *deserialize* into the new
+/// shape and silently mean something wrong. The version byte guards that — a file
+/// whose version doesn't match is ignored on load (the run starts from a fresh,
+/// seeded model) rather than merged as garbage. Bump this whenever any persisted
+/// DTO (`MarkovDto`, the trie/dynsdt/tst DTOs, ...) changes in a non-additive way.
+///
+/// `b'1'` is chosen so that `MODEL_MAGIC` + `MODEL_VERSION` == the historical
+/// `b"FXM1"` header byte-for-byte: v1 files written before this split load
+/// unchanged.
+pub(crate) const MODEL_VERSION: u8 = b'1';
 
 fn write_file(path: &str, bytes: &[u8]) {
     if let Some(parent) = std::path::Path::new(path).parent() {
@@ -69,8 +82,22 @@ fn load_model_file(model: &mut dyn PathModel, path: &str) {
     let Ok(bytes) = std::fs::read(path) else {
         return;
     };
-    if let Some(payload) = bytes.strip_prefix(MODEL_MAGIC.as_slice()) {
-        let _ = model.merge_bytes(payload);
+    if let Some(rest) = bytes.strip_prefix(MODEL_MAGIC.as_slice()) {
+        match rest.split_first() {
+            Some((&ver, payload)) if ver == MODEL_VERSION => {
+                let _ = model.merge_bytes(payload);
+            }
+            Some((&ver, _)) => {
+                // A known container but an unsupported schema version: ignore it
+                // rather than risk a positional bincode misread. The caller keeps
+                // its fresh/seeded model.
+                eprintln!(
+                    "[ml] ignoring model at {path}: schema v{} not supported (expected v{})",
+                    ver as char, MODEL_VERSION as char
+                );
+            }
+            None => {}
+        }
     } else if let Ok(text) = std::str::from_utf8(&bytes) {
         let _ = model.merge_json(text);
     }
@@ -83,8 +110,9 @@ fn load_model_file(model: &mut dyn PathModel, path: &str) {
 fn persist_model(model: &dyn PathModel, model_path: &str, export_json_path: &str) {
     if !model_path.is_empty() {
         if let Ok(mut bytes) = model.save_bytes() {
-            let mut out = Vec::with_capacity(bytes.len() + MODEL_MAGIC.len());
+            let mut out = Vec::with_capacity(bytes.len() + MODEL_MAGIC.len() + 1);
             out.extend_from_slice(MODEL_MAGIC);
+            out.push(MODEL_VERSION);
             out.append(&mut bytes);
             write_file(model_path, &out);
         }
@@ -117,10 +145,29 @@ pub struct Summary {
 /// [`Summary`] at the end of the target.
 pub type DiscoveryHook = Box<dyn FnMut(&str, u16)>;
 
+/// A snapshot of live scan progress, handed to the [`ProgressHook`] once per
+/// completed round so a caller can drive a progress bar/spinner without the core
+/// taking a UI dependency.
+#[derive(Debug, Clone, Copy)]
+pub struct RoundProgress {
+    /// Rounds completed so far.
+    pub rounds: usize,
+    /// Total requests issued so far.
+    pub requests: usize,
+    /// In-scope resources discovered so far.
+    pub found: usize,
+    /// Directory "arms" known so far (root + discovered dirs); the scan's
+    /// breadth, which grows as new directories are found.
+    pub arms: usize,
+}
+
+pub type ProgressHook = Box<dyn FnMut(RoundProgress)>;
+
 pub struct Campaign {
     cfg: Config,
     runner: Box<dyn FeroxRunner>,
     on_discover: Option<DiscoveryHook>,
+    on_progress: Option<ProgressHook>,
 }
 
 impl Campaign {
@@ -129,12 +176,21 @@ impl Campaign {
             cfg,
             runner,
             on_discover: None,
+            on_progress: None,
         }
     }
 
     /// Register a hook fired for every discovery as it happens (see [`DiscoveryHook`]).
     pub fn with_on_discover(mut self, hook: impl FnMut(&str, u16) + 'static) -> Self {
         self.on_discover = Some(Box::new(hook));
+        self
+    }
+
+    /// Register a hook fired once per completed round with a [`RoundProgress`]
+    /// snapshot (see [`ProgressHook`]). When set, the core suppresses its own
+    /// periodic text progress line so a caller-drawn bar isn't garbled by it.
+    pub fn with_on_progress(mut self, hook: impl FnMut(RoundProgress) + 'static) -> Self {
+        self.on_progress = Some(Box::new(hook));
         self
     }
 
@@ -155,6 +211,51 @@ impl Campaign {
     }
 
     /// Deterministic pseudo-random probe paths used to learn soft-404 sigs.
+    /// Resolve the effective scan root for `target`: the explicit
+    /// [`Config::base_path`] if set, else a discovered application mount point when
+    /// [`Config::discover_base_path`] is on, else `target` unchanged. Never called
+    /// in list mode. The result is always on the same host as `target`, so it is in
+    /// scope by construction (see [`crate::scope::Scope`]).
+    fn resolve_base_path(&self, target: &str, scope: &Scope) -> anyhow::Result<String> {
+        // Explicit override: join and use verbatim, no probe. Surest fix when the
+        // operator already knows the context path (e.g. `/WebGoat/`).
+        if !self.cfg.base_path.is_empty() {
+            let joined = join_base_path(target, &self.cfg.base_path);
+            eprintln!("[ml] scanning under explicit base path: {joined}");
+            return Ok(joined);
+        }
+        if !self.cfg.discover_base_path {
+            return Ok(target.to_string());
+        }
+        // Probe the generic mount points once, then pick the first *candidate*
+        // (not the first response) that answered as a directory — candidate order
+        // is most-general-first, so a broad `/app/` wins over a nested `/v1/`.
+        let words: Vec<String> = crate::profiles::BASE_PATH_CANDIDATES
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let resps = self.runner.run(&FeroxArgs {
+            url: target.to_string(),
+            words,
+            no_recursion: true,
+            all_codes: true, // a context root often answers with a 3xx redirect
+            extract_links: false,
+        })?;
+        for cand in crate::profiles::BASE_PATH_CANDIDATES {
+            let hit = resps.iter().find(|r| {
+                r.is_directory()
+                    && scope.allows(&r.url)
+                    && path_segments(&r.url).last().map(String::as_str) == Some(cand)
+            });
+            if let Some(r) = hit {
+                let base = ensure_trailing_slash(&r.url);
+                eprintln!("[ml] discovered application base path: {base}");
+                return Ok(base);
+            }
+        }
+        Ok(target.to_string())
+    }
+
     fn random_probe_paths(&self, n: usize) -> Vec<String> {
         let mut rng = Rng::new(self.cfg.seed ^ 0xA5A5_5A5A);
         (0..n)
@@ -171,6 +272,18 @@ impl Campaign {
         // List mode gates every new behavior: when `list_dir` is set the
         // fingerprint/seed phase is skipped and scanning is driven by the lists.
         let list_mode = !self.cfg.list_dir.is_empty();
+
+        // Base-path discovery: when the application isn't served at the origin
+        // root, fingerprint and scan under its context path instead of blind at
+        // `/`. No-op unless configured, and skipped in list mode. The resolved root
+        // is on the same host, so it stays in scope; `target` is shadowed so the
+        // whole pipeline below (probe, fingerprint, root arm, summary) uses it.
+        let effective_target = if list_mode {
+            target.to_string()
+        } else {
+            self.resolve_base_path(target, &scope)?
+        };
+        let target = effective_target.as_str();
 
         // ---- Phase 1: probe ----
         // The 3 random probes always run so the soft-404 signature is learned
@@ -244,6 +357,19 @@ impl Campaign {
             let (random_views, mut probe_views): (Vec<_>, Vec<_>) = to_probe_views(&probe_resps)
                 .into_iter()
                 .partition(|v| random_paths.iter().any(|r| v.url.contains(r.as_str())));
+            // Base-path discovery scans under a context path (e.g. `.../app/`), so
+            // the probe URLs are `.../app/api`, not `.../api`. `feature_vector`
+            // keys on origin-root-relative paths (`has("api")`, `root_json` on the
+            // empty path), so rebase the discriminating views back to the root
+            // before fingerprinting — otherwise every path-presence feature misses
+            // and a base-mounted app looks like bare static (the documented
+            // WebGoat-under-`/WebGoat/` miss).
+            let base_path = url_path_of(target);
+            if base_path.trim_matches('/') != "" {
+                for v in probe_views.iter_mut() {
+                    v.url = origin_relative(&v.url, &base_path);
+                }
+            }
             let soft404 = fingerprint::learn_soft_404(&random_views);
             fingerprint::apply_soft_404(&mut probe_views, &soft404);
 
@@ -276,7 +402,8 @@ impl Campaign {
         }
 
         let mut bm25 = Bm25::new();
-        let mut sched = scheduler::build(&self.cfg.scheduler, self.cfg.seed);
+        let mut sched =
+            scheduler::build_decayed(&self.cfg.scheduler, self.cfg.seed, self.cfg.scheduler_decay);
         let mut seen = SeenPaths::new();
 
         // list-driven scanning: the wordlist pool is re-applied to every directory
@@ -494,7 +621,10 @@ impl Campaign {
 
             // periodic progress for long list-mode scans (full SecLists / unlimited
             // depth), so a large run is observable without waiting for the summary.
-            if list_mode && summary.rounds % 25 == 0 {
+            // Only when no progress hook is attached: a caller that draws its own
+            // bar (feroxbuster's --ml-loop spinner) gets the per-round `on_progress`
+            // callback below instead, and a raw eprintln here would garble that bar.
+            if list_mode && summary.rounds % 25 == 0 && self.on_progress.is_none() {
                 eprintln!(
                     "[ml-loop] rounds={} requests={} found={} arms={}",
                     summary.rounds,
@@ -542,6 +672,18 @@ impl Campaign {
 
             let reward = hits as f64 / words.len().max(1) as f64;
             sched.update(&arm, reward);
+
+            // live progress snapshot for a caller-drawn bar/spinner (see
+            // [`ProgressHook`]). Fired every round; the hook is expected to be cheap
+            // (indicatif only repaints at its own throttled rate).
+            if let Some(hook) = self.on_progress.as_mut() {
+                hook(RoundProgress {
+                    rounds: summary.rounds,
+                    requests: summary.requests_used,
+                    found: summary.discovered.len(),
+                    arms: known_arms.len(),
+                });
+            }
         }
 
         // persist what this run learned so the next scan starts smarter
@@ -744,6 +886,46 @@ fn ensure_trailing_slash(url: &str) -> String {
     }
 }
 
+/// Join an explicit base/context path onto a target URL, normalizing slashes, and
+/// return it with a trailing slash so it reads as a directory root. An empty or
+/// slash-only `base` just normalizes the target's trailing slash.
+fn join_base_path(target: &str, base: &str) -> String {
+    let b = base.trim_matches('/');
+    if b.is_empty() {
+        return ensure_trailing_slash(target);
+    }
+    format!("{}/{}/", target.trim_end_matches('/'), b)
+}
+
+/// The path component of a URL (e.g. `/app/` for `https://h/app/`), or `/` when it
+/// has none / can't be parsed.
+fn url_path_of(url: &str) -> String {
+    url::Url::parse(url)
+        .map(|u| u.path().to_string())
+        .unwrap_or_else(|_| "/".to_string())
+}
+
+/// Rewrite `url` so its path is relative to the origin root by stripping a leading
+/// context-path `prefix` (e.g. `/app`). `https://h/app/api` with prefix `/app`
+/// becomes `https://h/api`, and `https://h/app/` becomes `https://h/`. Returns the
+/// input unchanged if it doesn't start with the prefix or can't be parsed.
+fn origin_relative(url: &str, prefix: &str) -> String {
+    let prefix = prefix.trim_end_matches('/');
+    let Ok(mut u) = url::Url::parse(url) else {
+        return url.to_string();
+    };
+    let path = u.path().to_string();
+    let Some(rest) = path.strip_prefix(prefix) else {
+        return url.to_string();
+    };
+    // only a true segment boundary counts (don't turn /application into /lication)
+    if !rest.is_empty() && !rest.starts_with('/') {
+        return url.to_string();
+    }
+    u.set_path(if rest.is_empty() { "/" } else { rest });
+    u.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -786,6 +968,41 @@ mod tests {
         let mut loaded = MarkovModel::new(3, 0.5, 0.01);
         load_model_file(&mut loaded, &p);
         assert_eq!(m.predict("/wp-content", 5), loaded.predict("/wp-content", 5));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn model_with_unsupported_schema_version_is_ignored() {
+        let dir = std::env::temp_dir().join(format!("ferox-model-ver-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("model.bin");
+        let p = path.to_string_lossy().to_string();
+
+        // a container with the right family magic but a future/foreign version
+        let m = MarkovModel::seeded("WORDPRESS_CMS", 3, 0.5, 0.01);
+        let mut bytes = m.save_bytes().unwrap();
+        let mut out = Vec::new();
+        out.extend_from_slice(MODEL_MAGIC);
+        out.push(MODEL_VERSION + 1); // unsupported version
+        out.append(&mut bytes);
+        std::fs::write(&path, &out).unwrap();
+
+        // loading it must NOT merge — a fresh model stays empty of those predictions
+        let fresh = MarkovModel::new(3, 0.5, 0.01);
+        let mut loaded = MarkovModel::new(3, 0.5, 0.01);
+        load_model_file(&mut loaded, &p);
+        assert_eq!(
+            loaded.predict("/wp-content", 5),
+            fresh.predict("/wp-content", 5),
+            "a version-mismatched model must be ignored, not merged"
+        );
+
+        // and the current version still round-trips through the same loader
+        persist_model(&m, &p, "");
+        let mut ok = MarkovModel::new(3, 0.5, 0.01);
+        load_model_file(&mut ok, &p);
+        assert_eq!(m.predict("/wp-content", 5), ok.predict("/wp-content", 5));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -893,6 +1110,91 @@ mod tests {
         );
         assert!(s.predicted_hits >= 2, "summary={s:?}");
         assert_eq!(s.dropped_out_of_scope, 0);
+    }
+
+    #[test]
+    fn base_path_helpers_normalize_and_strip() {
+        assert_eq!(join_base_path("https://x.test", "/WebGoat/"), "https://x.test/WebGoat/");
+        assert_eq!(join_base_path("https://x.test/", "app"), "https://x.test/app/");
+        assert_eq!(join_base_path("https://x.test/", ""), "https://x.test/");
+        assert_eq!(url_path_of("https://x.test/app/"), "/app/");
+
+        assert_eq!(origin_relative("https://x.test/app/api", "/app"), "https://x.test/api");
+        assert_eq!(origin_relative("https://x.test/app/", "/app"), "https://x.test/");
+        // segment-boundary safety: /application must NOT match prefix /app
+        assert_eq!(
+            origin_relative("https://x.test/application/x", "/app"),
+            "https://x.test/application/x"
+        );
+        // non-matching prefix is left untouched
+        assert_eq!(origin_relative("https://x.test/other", "/app"), "https://x.test/other");
+    }
+
+    /// Fake whose app is mounted under `/app/`: the origin root is blind, but a
+    /// base-path probe finds `/app/` and fingerprinting then succeeds there.
+    struct BasePathFake;
+    impl FeroxRunner for BasePathFake {
+        fn run(&self, args: &FeroxArgs) -> anyhow::Result<Vec<FeroxResponse>> {
+            // base-path discovery probe (generic mount candidates include "application")
+            if args.words.iter().any(|w| w == "application") {
+                return Ok(vec![resp("https://x.test/app", 200, true)]);
+            }
+            // fingerprint probe, now rooted under /app/: a REST API with a JSON root
+            if args.words.iter().any(|w| w == "wp-json") {
+                let mut root = resp("https://x.test/app/", 200, false);
+                root.headers.insert("content-type".into(), "application/json".into());
+                return Ok(vec![resp("https://x.test/app/api", 200, true), root]);
+            }
+            Ok(vec![])
+        }
+    }
+
+    #[test]
+    fn base_path_discovery_reroots_and_fingerprints() {
+        let mut cfg = Config::default();
+        cfg.discover_base_path = true;
+        cfg.use_soft404_filter = false;
+        cfg.max_rounds = 3;
+
+        let s = Campaign::new(cfg, Box::new(BasePathFake))
+            .run("https://x.test")
+            .unwrap();
+
+        assert_eq!(
+            s.target, "https://x.test/app/",
+            "scan should reroot under the discovered application base path"
+        );
+        // path-presence features (api, root_json) are matched base-relative, so the
+        // app fingerprints as REST rather than blind static.
+        assert_eq!(s.profile, "REST_API", "distances={:?}", s.distances);
+    }
+
+    #[test]
+    fn explicit_base_path_runs_under_it_without_probing() {
+        struct UnderBase;
+        impl FeroxRunner for UnderBase {
+            fn run(&self, args: &FeroxArgs) -> anyhow::Result<Vec<FeroxResponse>> {
+                // every scan (probe included) must be rooted under the explicit base;
+                // and the generic-candidate discovery probe must NOT have run.
+                assert!(
+                    args.url.starts_with("https://x.test/WebGoat/"),
+                    "scan url not under base: {}",
+                    args.url
+                );
+                assert!(
+                    !args.words.iter().any(|w| w == "application"),
+                    "explicit base_path must skip the discovery probe"
+                );
+                Ok(vec![])
+            }
+        }
+        let mut cfg = Config::default();
+        cfg.base_path = "/WebGoat/".into();
+        cfg.use_soft404_filter = false;
+        cfg.max_rounds = 1;
+
+        let s = Campaign::new(cfg, Box::new(UnderBase)).run("https://x.test").unwrap();
+        assert_eq!(s.target, "https://x.test/WebGoat/");
     }
 
     #[test]
