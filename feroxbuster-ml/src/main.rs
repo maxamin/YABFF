@@ -860,6 +860,27 @@ impl ferox_ml_core::ferox::FeroxRunner for InProcessRunner {
     }
 }
 
+/// Format one --ml-loop discovery for --output: plaintext `status url`, or a
+/// schema-compatible NDJSON `{type,url,path,status}` record under --json.
+fn ml_output_line(url: &str, status: u16, json: bool) -> String {
+    if json {
+        let path = url::Url::parse(url)
+            .map(|u| u.path().to_string())
+            .unwrap_or_default();
+        format!(
+            "{}\n",
+            serde_json::json!({
+                "type": "response",
+                "url": url,
+                "path": path,
+                "status": status,
+            })
+        )
+    } else {
+        format!("{status} {url}\n")
+    }
+}
+
 /// Run the shared `ferox-ml-core` orchestrator (the adaptive, budgeted
 /// bounded-scan feedback loop) against the target, in-process via
 /// [`InProcessRunner`] — the same runner-agnostic `Campaign` both tools share,
@@ -867,6 +888,7 @@ impl ferox_ml_core::ferox::FeroxRunner for InProcessRunner {
 fn run_ml_loop(config: &Configuration) -> Result<()> {
     use ferox_ml_core::config::Config as MlConfig;
     use ferox_ml_core::orchestrator::Campaign;
+    use std::{cell::RefCell, io::Write, rc::Rc};
 
     // Gather the target list: URLs from --stdin (cached during config parsing) plus
     // -u/--url, so --ml-loop runs over a whole list, not just one host. Bare hosts
@@ -975,13 +997,14 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
 
     // --output routing: the in-process ml-loop runner bypasses feroxbuster's
     // normal output handler, so discovered resources never reached --output.
-    // Open it here (append/create) and write each target's hits as it finishes,
-    // so a long multi-target sweep persists results incrementally and keeps what
-    // it found if the run is interrupted. Honors --json (NDJSON) vs plaintext.
-    let mut out_file = if config.output.is_empty() {
+    // Open it here (append/create) and stream each hit to it the moment the
+    // orchestrator records it (via Campaign's discovery hook), flushing per line,
+    // so a long target persists results as it goes and an interrupt, crash, or
+    // failing round loses nothing already found. Honors --json (NDJSON) vs plaintext.
+    let out_file = if config.output.is_empty() {
         None
     } else {
-        Some(open_file(&config.output)?)
+        Some(Rc::new(RefCell::new(open_file(&config.output)?)))
     };
 
     let multi = targets.len() > 1;
@@ -1001,7 +1024,24 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
         if multi {
             println!("\n=== [{}/{}] {} ===", i + 1, targets.len(), target);
         }
-        match Campaign::new(cfg.clone(), Box::new(runner)).run(target) {
+        let mut campaign = Campaign::new(cfg.clone(), Box::new(runner));
+        if let Some(file) = out_file.clone() {
+            let json = config.json;
+            let output = config.output.clone();
+            let mut failed = false;
+            campaign = campaign.with_on_discover(move |url, status| {
+                if failed {
+                    return;
+                }
+                let line = ml_output_line(url, status, json);
+                let mut f = file.borrow_mut();
+                if let Err(e) = f.write_all(line.as_bytes()).and_then(|_| f.flush()) {
+                    log::warn!("ml-loop: could not write to {output}: {e}; disabling --output");
+                    failed = true;
+                }
+            });
+        }
+        match campaign.run(target) {
             Ok(summary) => {
                 scanned += 1;
                 total_found += summary.discovered.len();
@@ -1017,36 +1057,6 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
                 println!("out-of-scope drop: {}", summary.dropped_out_of_scope);
                 for (url, status) in &summary.discovered {
                     println!("  {status} {url}");
-                }
-
-                // mirror the discovered resources into --output, if set
-                if let Some(file) = out_file.as_mut() {
-                    use std::io::Write;
-                    for (url, status) in &summary.discovered {
-                        let line = if config.json {
-                            let path = url::Url::parse(url)
-                                .map(|u| u.path().to_string())
-                                .unwrap_or_default();
-                            format!(
-                                "{}\n",
-                                serde_json::json!({
-                                    "type": "response",
-                                    "url": url,
-                                    "path": path,
-                                    "status": status,
-                                })
-                            )
-                        } else {
-                            format!("{status} {url}\n")
-                        };
-                        if let Err(e) = file.write_all(line.as_bytes()) {
-                            log::warn!("ml-loop: could not write to {}: {e}", config.output);
-                            break;
-                        }
-                    }
-                    // flush per target so results aren't stuck in the buffer if
-                    // the run is interrupted before the next target completes
-                    let _ = file.flush();
                 }
             }
             Err(e) => eprintln!("[ml-loop] target {target} failed: {e}"),

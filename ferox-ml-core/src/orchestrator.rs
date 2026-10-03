@@ -76,14 +76,38 @@ pub struct Summary {
     pub filtered_soft404: usize,
 }
 
+/// Called with `(url, status)` the moment a resource is recorded as discovered,
+/// so a host can stream results (e.g. to `--output`) instead of waiting for the
+/// [`Summary`] at the end of the target.
+pub type DiscoveryHook = Box<dyn FnMut(&str, u16)>;
+
 pub struct Campaign {
     cfg: Config,
     runner: Box<dyn FeroxRunner>,
+    on_discover: Option<DiscoveryHook>,
 }
 
 impl Campaign {
     pub fn new(cfg: Config, runner: Box<dyn FeroxRunner>) -> Self {
-        Self { cfg, runner }
+        Self {
+            cfg,
+            runner,
+            on_discover: None,
+        }
+    }
+
+    /// Register a hook fired for every discovery as it happens (see [`DiscoveryHook`]).
+    pub fn with_on_discover(mut self, hook: impl FnMut(&str, u16) + 'static) -> Self {
+        self.on_discover = Some(Box::new(hook));
+        self
+    }
+
+    /// Record a discovery in the summary and notify the streaming hook, if any.
+    fn record(&mut self, summary: &mut Summary, url: &str, status: u16) {
+        summary.discovered.push((url.to_string(), status));
+        if let Some(hook) = self.on_discover.as_mut() {
+            hook(url, status);
+        }
     }
 
     fn markov_max_order(&self) -> usize {
@@ -259,7 +283,7 @@ impl Campaign {
             if !seen.insert(&r.url) {
                 continue;
             }
-            summary.discovered.push((r.url.clone(), r.status));
+            self.record(&mut summary, &r.url, r.status);
             bm25.add_document(&last_segment(&r.url));
             model.learn(&r.url);
             if r.is_directory() && r.depth() < self.cfg.max_depth {
@@ -421,7 +445,7 @@ impl Campaign {
 
                 hits += 1;
                 summary.predicted_hits += 1;
-                summary.discovered.push((r.url.clone(), r.status));
+                self.record(&mut summary, &r.url, r.status);
 
                 // online learning
                 model.learn(&r.url);
@@ -722,6 +746,50 @@ mod tests {
         );
         assert!(s.predicted_hits >= 2, "summary={s:?}");
         assert_eq!(s.dropped_out_of_scope, 0);
+    }
+
+    #[test]
+    fn discovery_hook_streams_every_hit_in_order() {
+        // same chained-prediction fixture as full_pipeline_offline: /api comes
+        // from the probe, /api/v1 and /api/v1/users from later rounds
+        let probe = vec![
+            resp("https://x.test/api", 200, true),
+            {
+                let mut r = resp("https://x.test/", 200, false);
+                r.headers.insert("content-type".into(), "application/json".into());
+                r
+            },
+        ];
+        let mut by_arm = std::collections::HashMap::new();
+        by_arm.insert(
+            "https://x.test/api/".to_string(),
+            vec![resp("https://x.test/api/v1", 200, true)],
+        );
+        by_arm.insert(
+            "https://x.test/api/v1/".to_string(),
+            vec![resp("https://x.test/api/v1/users", 200, false)],
+        );
+        let runner = FakeRunner {
+            probe,
+            by_arm,
+            calls: RefCell::new(0),
+        };
+        let mut cfg = Config::default();
+        cfg.max_rounds = 10;
+        cfg.use_soft404_filter = false;
+
+        let streamed = std::rc::Rc::new(RefCell::new(Vec::new()));
+        let sink = streamed.clone();
+        let s = Campaign::new(cfg, Box::new(runner))
+            .with_on_discover(move |url, status| {
+                sink.borrow_mut().push((url.to_string(), status))
+            })
+            .run("https://x.test")
+            .unwrap();
+
+        // the hook saw exactly what the summary recorded, in discovery order
+        assert!(s.discovered.len() >= 3, "summary={s:?}");
+        assert_eq!(*streamed.borrow(), s.discovered);
     }
 
     /// A runner that returns REST probe signals, and (when extraction is on, as
