@@ -161,6 +161,16 @@ impl Tst {
     pub fn from_json(text: &str) -> anyhow::Result<Self> {
         Ok(serde_json::from_str(text)?)
     }
+
+    pub fn to_bincode(&self) -> anyhow::Result<Vec<u8>> {
+        use bincode::Options;
+        Ok(bincode::DefaultOptions::new().serialize(self)?)
+    }
+
+    pub fn from_bincode(bytes: &[u8]) -> anyhow::Result<Self> {
+        use bincode::Options;
+        Ok(bincode::DefaultOptions::new().deserialize(bytes)?)
+    }
 }
 
 impl Predictor for Tst {
@@ -180,6 +190,15 @@ impl PathModel for Tst {
 
     fn merge_json(&mut self, text: &str) -> anyhow::Result<()> {
         self.merge(&Tst::from_json(text)?);
+        Ok(())
+    }
+
+    fn save_bytes(&self) -> anyhow::Result<Vec<u8>> {
+        self.to_bincode()
+    }
+
+    fn merge_bytes(&mut self, bytes: &[u8]) -> anyhow::Result<()> {
+        self.merge(&Tst::from_bincode(bytes)?);
         Ok(())
     }
 }

@@ -73,6 +73,11 @@ pub struct Config {
     /// model trained from the labs is written.
     pub model_path: String,
 
+    /// Optional path for a human-readable compact-JSON dump of the final model
+    /// (the `--ml-export` debug flag). Empty disables it; the default persisted
+    /// model at `model_path` is always the compact binary container.
+    pub model_export_json: String,
+
     // --- directory-of-wordlists driver (list mode) ---
     /// Directory containing wordlist files. When set, the fingerprint/seed phase
     /// is skipped entirely and scanning is driven by these lists.
@@ -121,6 +126,7 @@ impl Default for Config {
             scope: vec![],
             state_dir: ".feroxml".into(),
             model_path: String::new(),
+            model_export_json: String::new(),
             list_dir: String::new(),
             list_chunk_size: default_list_chunk(),
             list_max_entries: 0, // unlimited: use every entry in the tree

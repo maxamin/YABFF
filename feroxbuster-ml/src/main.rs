@@ -1035,6 +1035,7 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
         markov_max_order: config.ml_order,
         top_n: config.ml_predictions,
         model_path: config.ml_model.clone(),
+        model_export_json: config.ml_export.clone(),
         extensions: config.extensions.clone(),
         // state_dir defaults to ".feroxml" (MlConfig::default) — holds the ranked
         // list-pool cache; persistent and project-local rather than OS temp.

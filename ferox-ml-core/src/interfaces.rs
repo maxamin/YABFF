@@ -25,12 +25,22 @@ pub trait Predictor {
 /// [`save_json`](PathModel::save_json) / [`merge_json`](PathModel::merge_json)
 /// give cross-run persistence (more runs => better model).
 pub trait PathModel: Predictor {
-    /// Serialize the whole model to JSON for persistence.
+    /// Serialize the whole model to JSON. Used for the human-readable `--ml-export`
+    /// debug dump; the default on-disk model uses the compact binary encoding below.
     fn save_json(&self) -> anyhow::Result<String>;
 
     /// Merge a previously persisted model of the **same** algorithm (its JSON).
     /// A format mismatch returns an error and leaves `self` unchanged.
     fn merge_json(&mut self, text: &str) -> anyhow::Result<()>;
+
+    /// Serialize the whole model with bincode — the default persistence encoding
+    /// (the same serde data model as [`save_json`](PathModel::save_json), just a
+    /// far smaller and faster-to-load binary encoding).
+    fn save_bytes(&self) -> anyhow::Result<Vec<u8>>;
+
+    /// Merge a previously persisted model of the **same** algorithm (its bincode).
+    /// A format mismatch returns an error and leaves `self` unchanged.
+    fn merge_bytes(&mut self, bytes: &[u8]) -> anyhow::Result<()>;
 }
 
 /// Phase 3 — decide which discovered directory ("arm") to expand next.

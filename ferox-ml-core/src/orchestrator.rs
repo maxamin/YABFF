@@ -48,15 +48,51 @@ const SAVE_EVERY_ROUNDS: usize = 500;
 
 /// Write `model` to `model_path` (no-op if unset), creating parent dirs. Shared
 /// by the periodic flush, the cooperative-stop exit, and the end-of-run save.
-fn persist_model(model: &dyn PathModel, model_path: &str) {
-    if model_path.is_empty() {
-        return;
+/// Magic header for the binary (bincode) model container. A persisted file that
+/// does not start with these bytes is treated as legacy JSON on load, so existing
+/// `model.json` files keep working after the switch to the binary default.
+pub(crate) const MODEL_MAGIC: &[u8; 4] = b"FXM1";
+
+fn write_file(path: &str, bytes: &[u8]) {
+    if let Some(parent) = std::path::Path::new(path).parent() {
+        let _ = std::fs::create_dir_all(parent);
     }
-    if let Ok(js) = model.save_json() {
-        if let Some(parent) = std::path::Path::new(model_path).parent() {
-            let _ = std::fs::create_dir_all(parent);
+    let _ = std::fs::write(path, bytes);
+}
+
+/// Load a persisted model at `path` into `model`, auto-detecting the format: a
+/// file starting with [`MODEL_MAGIC`] is the binary container (current default);
+/// anything else is treated as legacy JSON (an existing `model.json`), so the
+/// switch to the binary default is backward-compatible. A read or format error is
+/// ignored, leaving `model` as-is (a fresh/seeded model).
+fn load_model_file(model: &mut dyn PathModel, path: &str) {
+    let Ok(bytes) = std::fs::read(path) else {
+        return;
+    };
+    if let Some(payload) = bytes.strip_prefix(MODEL_MAGIC.as_slice()) {
+        let _ = model.merge_bytes(payload);
+    } else if let Ok(text) = std::str::from_utf8(&bytes) {
+        let _ = model.merge_json(text);
+    }
+}
+
+/// Persist `model`: the default on-disk format at `model_path` is the compact
+/// bincode container (magic header + bincode payload); when `export_json_path`
+/// is set, an additional human-readable compact-JSON copy is written there for
+/// debugging. Both are no-ops when their path is empty.
+fn persist_model(model: &dyn PathModel, model_path: &str, export_json_path: &str) {
+    if !model_path.is_empty() {
+        if let Ok(mut bytes) = model.save_bytes() {
+            let mut out = Vec::with_capacity(bytes.len() + MODEL_MAGIC.len());
+            out.extend_from_slice(MODEL_MAGIC);
+            out.append(&mut bytes);
+            write_file(model_path, &out);
         }
-        let _ = std::fs::write(model_path, js);
+    }
+    if !export_json_path.is_empty() {
+        if let Ok(js) = model.save_json() {
+            write_file(export_json_path, js.as_bytes());
+        }
     }
 }
 
@@ -236,9 +272,7 @@ impl Campaign {
         let mut model: Box<dyn PathModel> =
             algo::build(selected, &self.cfg, &profile, list_mode);
         if !self.cfg.model_path.is_empty() {
-            if let Ok(text) = std::fs::read_to_string(&self.cfg.model_path) {
-                let _ = model.merge_json(&text);
-            }
+            load_model_file(&mut *model, &self.cfg.model_path);
         }
 
         let mut bm25 = Bm25::new();
@@ -353,14 +387,14 @@ impl Campaign {
             // runs, but saving here means an interrupt keeps the model even if
             // later teardown is skipped.
             if crate::stop_requested() {
-                persist_model(&*model, &self.cfg.model_path);
+                persist_model(&*model, &self.cfg.model_path, &self.cfg.model_export_json);
                 break;
             }
 
             // Periodic flush so a SIGKILL/crash (which can't be caught) loses at
             // most SAVE_EVERY_ROUNDS rounds of learning.
             if summary.rounds > 0 && summary.rounds % SAVE_EVERY_ROUNDS == 0 {
-                persist_model(&*model, &self.cfg.model_path);
+                persist_model(&*model, &self.cfg.model_path, &self.cfg.model_export_json);
             }
 
             let arm = match sched.choose() {
@@ -511,7 +545,7 @@ impl Campaign {
         }
 
         // persist what this run learned so the next scan starts smarter
-        persist_model(&*model, &self.cfg.model_path);
+        persist_model(&*model, &self.cfg.model_path, &self.cfg.model_export_json);
 
         Ok(summary)
     }
@@ -714,6 +748,67 @@ fn ensure_trailing_slash(url: &str) -> String {
 mod tests {
     use super::*;
     use std::cell::RefCell;
+
+    #[test]
+    fn persisted_model_is_binary_and_round_trips() {
+        let dir = std::env::temp_dir().join(format!("ferox-model-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("model.bin");
+        let p = path.to_string_lossy().to_string();
+
+        let m = MarkovModel::seeded("WORDPRESS_CMS", 3, 0.5, 0.01);
+        persist_model(&m, &p, "");
+
+        // on-disk file carries the binary magic header, not JSON
+        let raw = std::fs::read(&path).unwrap();
+        assert!(raw.starts_with(MODEL_MAGIC), "persisted model must be the binary container");
+        assert_ne!(raw.first(), Some(&b'{'), "must not be JSON by default");
+
+        // the sniffing loader restores it and predictions match
+        let mut loaded = MarkovModel::new(3, 0.5, 0.01);
+        load_model_file(&mut loaded, &p);
+        assert_eq!(m.predict("/wp-content", 5), loaded.predict("/wp-content", 5));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn loader_is_backward_compatible_with_legacy_json() {
+        let dir = std::env::temp_dir().join(format!("ferox-model-json-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("model.json");
+        let p = path.to_string_lossy().to_string();
+
+        // a pre-switch model.json (plain JSON, no magic header)
+        let m = MarkovModel::seeded("WORDPRESS_CMS", 3, 0.5, 0.01);
+        std::fs::write(&path, m.to_json().unwrap()).unwrap();
+
+        let mut loaded = MarkovModel::new(3, 0.5, 0.01);
+        load_model_file(&mut loaded, &p);
+        assert_eq!(m.predict("/wp-content", 5), loaded.predict("/wp-content", 5));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn export_json_is_written_alongside_binary_model() {
+        let dir = std::env::temp_dir().join(format!("ferox-model-exp-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bin = dir.join("model.bin").to_string_lossy().to_string();
+        let js = dir.join("export.json").to_string_lossy().to_string();
+
+        let m = MarkovModel::seeded("WORDPRESS_CMS", 3, 0.5, 0.01);
+        persist_model(&m, &bin, &js);
+
+        assert!(std::fs::read(&bin).unwrap().starts_with(MODEL_MAGIC));
+        let exported = std::fs::read_to_string(&js).unwrap();
+        assert!(exported.starts_with('{'), "export must be JSON");
+        // exported JSON reloads to an equivalent model
+        let back = MarkovModel::from_json(&exported).unwrap();
+        assert_eq!(m.predict("/wp-content", 5), back.predict("/wp-content", 5));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// A fake runner that returns canned responses keyed by the scan URL.
     struct FakeRunner {

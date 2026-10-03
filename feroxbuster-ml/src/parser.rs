@@ -656,7 +656,15 @@ pub fn initialize() -> Command {
                 .value_name("FILE")
                 .num_args(1)
                 .help_heading("Scan settings")
-                .help("Path to a learned ML model to load and update (implies --ml)")
+                .help("Path to a learned ML model to load and update (implies --ml). The model persists in a compact binary format; existing JSON models still load")
+        ).arg(
+            Arg::new("ml_export")
+                .long("ml-export")
+                .value_hint(ValueHint::FilePath)
+                .value_name("FILE")
+                .num_args(1)
+                .help_heading("Scan settings")
+                .help("Also write a human-readable compact-JSON dump of the final --ml-loop model to FILE (debugging; the model at --ml-model stays binary)")
         ).arg(
             Arg::new("ml_order")
                 .long("ml-order")

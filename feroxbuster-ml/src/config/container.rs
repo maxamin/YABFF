@@ -386,6 +386,10 @@ pub struct Configuration {
     #[serde(default)]
     pub ml_model: String,
 
+    /// optional path for a compact-JSON debug dump of the final --ml-loop model
+    #[serde(default)]
+    pub ml_export: String,
+
     /// maximum Markov order for the ML predictor (default: 3)
     #[serde(default = "ml_order")]
     pub ml_order: usize,
@@ -485,6 +489,7 @@ impl Default for Configuration {
             ml_list_max: ml_list_max(),
             ml_algo: ml_algo(),
             ml_model: String::new(),
+            ml_export: String::new(),
             ml_order: ml_order(),
             ml_predictions: ml_predictions(),
             ml_rank: ml_rank(),
@@ -1090,6 +1095,7 @@ impl Configuration {
         );
         update_config_if_present!(&mut config.ml_algo, args, "ml_algo", String);
         update_config_if_present!(&mut config.ml_model, args, "ml_model", String);
+        update_config_if_present!(&mut config.ml_export, args, "ml_export", String);
         if !config.ml_model.is_empty() {
             config.ml = true; // --ml-model implies --ml
         }
@@ -1513,6 +1519,7 @@ impl Configuration {
         update_if_not_default!(&mut conf.ml_list_max, new.ml_list_max, ml_list_max());
         update_if_not_default!(&mut conf.ml_algo, new.ml_algo, ml_algo());
         update_if_not_default!(&mut conf.ml_model, new.ml_model, String::new());
+        update_if_not_default!(&mut conf.ml_export, new.ml_export, String::new());
         update_if_not_default!(&mut conf.ml_order, new.ml_order, ml_order());
         update_if_not_default!(&mut conf.ml_predictions, new.ml_predictions, ml_predictions());
         update_if_not_default!(&mut conf.ml_rank, new.ml_rank, ml_rank());

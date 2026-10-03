@@ -677,9 +677,11 @@ fn list_mode_persists_a_dynsdt_model_that_accumulates_across_runs() {
     let runner = RecordingRunner { calls: Rc::clone(&calls), by_url: by_url.clone() };
     Campaign::new(cfg.clone(), Box::new(runner)).run("http://t.test").unwrap();
 
-    // the persisted file is a DynSDT (not a Markov model) carrying the learned tree.
-    let text = std::fs::read_to_string(&model_path).unwrap();
-    let trie = DynSdt::from_json(&text).expect("persisted model should be a DynSDT");
+    // the persisted file is the binary container (4-byte "FXM1" magic + bincode)
+    // carrying a DynSDT (not a Markov model) with the learned tree.
+    let raw = std::fs::read(&model_path).unwrap();
+    assert_eq!(&raw[..4], b"FXM1", "persisted model should be the binary container");
+    let trie = DynSdt::from_bincode(&raw[4..]).expect("persisted model should be a DynSDT");
     let preds = trie.top_k(&["api".to_string()], 5);
     assert!(preds.iter().any(|(s, _)| s == "v1"), "trie should know api->v1: {preds:?}");
 
@@ -688,7 +690,8 @@ fn list_mode_persists_a_dynsdt_model_that_accumulates_across_runs() {
     let before = preds.iter().find(|(s, _)| s == "v1").map(|(_, v)| *v).unwrap();
     let runner2 = RecordingRunner { calls: Rc::new(RefCell::new(Vec::new())), by_url };
     Campaign::new(cfg, Box::new(runner2)).run("http://t.test").unwrap();
-    let trie2 = DynSdt::from_json(&std::fs::read_to_string(&model_path).unwrap()).unwrap();
+    let raw2 = std::fs::read(&model_path).unwrap();
+    let trie2 = DynSdt::from_bincode(&raw2[4..]).unwrap();
     let after = trie2
         .top_k(&["api".to_string()], 5)
         .into_iter()

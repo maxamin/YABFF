@@ -193,8 +193,9 @@ impl MarkovModel {
         scored
     }
 
-    pub fn to_json(&self) -> anyhow::Result<String> {
-        let dto = MarkovDto {
+    /// Build the serializable DTO (shared by every encoder).
+    fn to_dto(&self) -> MarkovDto {
+        MarkovDto {
             rows: self
                 .rows
                 .iter()
@@ -203,22 +204,42 @@ impl MarkovModel {
             max_order: self.max_order,
             alpha: self.alpha,
             threshold: self.threshold,
-        };
-        Ok(serde_json::to_string_pretty(&dto)?)
+        }
     }
 
-    pub fn from_json(text: &str) -> anyhow::Result<Self> {
-        let dto: MarkovDto = serde_json::from_str(text)?;
+    /// Rebuild from the DTO (shared by every decoder).
+    fn from_dto(dto: MarkovDto) -> Self {
         let mut rows: HashMap<Vec<String>, HashMap<String, f64>> = HashMap::new();
         for (ctx, tos) in dto.rows {
             rows.insert(ctx, tos.into_iter().collect());
         }
-        Ok(Self {
+        Self {
             rows,
             max_order: dto.max_order,
             alpha: dto.alpha,
             threshold: dto.threshold,
-        })
+        }
+    }
+
+    pub fn to_json(&self) -> anyhow::Result<String> {
+        // compact, not pretty: this feeds --ml-export and must stay small
+        Ok(serde_json::to_string(&self.to_dto())?)
+    }
+
+    pub fn from_json(text: &str) -> anyhow::Result<Self> {
+        Ok(Self::from_dto(serde_json::from_str(text)?))
+    }
+
+    pub fn to_bincode(&self) -> anyhow::Result<Vec<u8>> {
+        use bincode::Options;
+        // varint encoding: 1-byte lengths for the many short tokens, vs the
+        // 8-byte fixint prefixes the bare `bincode::serialize` would emit
+        Ok(bincode::DefaultOptions::new().serialize(&self.to_dto())?)
+    }
+
+    pub fn from_bincode(bytes: &[u8]) -> anyhow::Result<Self> {
+        use bincode::Options;
+        Ok(Self::from_dto(bincode::DefaultOptions::new().deserialize(bytes)?))
     }
 }
 
@@ -261,6 +282,15 @@ impl crate::interfaces::PathModel for MarkovModel {
 
     fn merge_json(&mut self, text: &str) -> anyhow::Result<()> {
         self.merge(&MarkovModel::from_json(text)?);
+        Ok(())
+    }
+
+    fn save_bytes(&self) -> anyhow::Result<Vec<u8>> {
+        self.to_bincode()
+    }
+
+    fn merge_bytes(&mut self, bytes: &[u8]) -> anyhow::Result<()> {
+        self.merge(&MarkovModel::from_bincode(bytes)?);
         Ok(())
     }
 }
@@ -323,5 +353,32 @@ mod tests {
             m.predict("/wp-content", 5),
             back.predict("/wp-content", 5)
         );
+    }
+
+    #[test]
+    fn bincode_round_trip_matches_json_and_beats_pretty() {
+        let m = MarkovModel::seeded("WORDPRESS_CMS", 3, 0.5, 0.01);
+        let bytes = m.to_bincode().unwrap();
+        let back = MarkovModel::from_bincode(&bytes).unwrap();
+        assert_eq!(m.predict("/wp-content", 5), back.predict("/wp-content", 5));
+        // the varint binary encoding is smaller than the pretty JSON it replaces
+        // (on the real 24 MB model: ~7.8 MB vs ~24 MB; also far faster to load)
+        let pretty = serde_json::to_string_pretty(&m.to_dto()).unwrap().len();
+        assert!(
+            bytes.len() < pretty,
+            "bincode ({}) should beat pretty json ({})",
+            bytes.len(),
+            pretty
+        );
+    }
+
+    #[test]
+    fn save_bytes_then_merge_bytes_preserves_predictions() {
+        use crate::interfaces::PathModel;
+        let m = MarkovModel::seeded("WORDPRESS_CMS", 3, 0.5, 0.01);
+        let bytes = m.save_bytes().unwrap();
+        let mut empty = MarkovModel::new(3, 0.5, 0.01);
+        empty.merge_bytes(&bytes).unwrap();
+        assert_eq!(m.predict("/wp-content", 5), empty.predict("/wp-content", 5));
     }
 }

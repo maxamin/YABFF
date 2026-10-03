@@ -37,7 +37,8 @@ complete -c feroxbuster -l time-limit -d 'Limit total run time of all scans (ex:
 complete -c feroxbuster -s w -l wordlist -d 'Path(s) or URL(s) of the wordlist(s); may be supplied multiple times (ex: -w a.txt -w b.txt) or as a comma-separated list (ex: -w a.txt,b.txt). Words from every source are merged and de-duplicated.' -r -F
 complete -c feroxbuster -s B -l collect-backups -d 'Automatically request likely backup extensions for "found" urls (default: ~, .bak, .bak2, .old, .1)' -r
 complete -c feroxbuster -s I -l dont-collect -d 'File extension(s) to Ignore while collecting extensions (only used with --collect-extensions)' -r
-complete -c feroxbuster -l ml-model -d 'Path to a learned ML model to load and update (implies --ml)' -r -F
+complete -c feroxbuster -l ml-model -d 'Path to a learned ML model to load and update (implies --ml). The model persists in a compact binary format; existing JSON models still load' -r -F
+complete -c feroxbuster -l ml-export -d 'Also write a human-readable compact-JSON dump of the final --ml-loop model to FILE (debugging; the model at --ml-model stays binary)' -r -F
 complete -c feroxbuster -l ml-order -d 'Maximum Markov order for the ML predictor (default: 3)' -r
 complete -c feroxbuster -l ml-predictions -d 'Number of ML-predicted paths injected per directory (default: 25)' -r
 complete -c feroxbuster -l ml-scheduler -d 'Bandit that scales per-directory prediction budget (default: thompson)' -r -f -a "thompson\t''
