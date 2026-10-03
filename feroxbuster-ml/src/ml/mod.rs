@@ -157,7 +157,15 @@ struct MlState {
     order: usize,
     alpha: f64,
     threshold: f64,
+    /// Observations recorded since the model was last persisted; drives the
+    /// periodic flush so an interrupted run loses at most `SAVE_EVERY` of them.
+    since_save: u32,
 }
+
+/// Persist the learned model every this many `observe` calls, so a `kill`/crash
+/// mid-run loses at most this many observations rather than the whole run's
+/// learning. Ctrl+C and graceful shutdown save unconditionally on top of this.
+const SAVE_EVERY: u32 = 500;
 
 /// Directory key for a URL: its lowercased, slash-joined path segments.
 fn dir_key(url: &str) -> String {
@@ -197,6 +205,7 @@ pub fn init(profile: &str, model_path: &str, params: &MlParams) {
             order: params.max_order,
             alpha: params.alpha,
             threshold: params.threshold,
+            since_save: 0,
         });
     }
 }
@@ -228,6 +237,7 @@ pub fn predict_words(recent_path: &str, top_n: usize) -> Vec<String> {
 /// to the BM25 corpus, and credit a hit to its parent directory (reward signal
 /// for the bandit's per-directory budget).
 pub fn observe(url: &str) {
+    let mut flush_due = false;
     if let Ok(mut guard) = ML.write() {
         if let Some(state) = guard.as_mut() {
             state.model.learn(url);
@@ -254,7 +264,19 @@ pub fn observe(url: &str) {
                     state.active_profile = corrected;
                 }
             }
+
+            state.since_save += 1;
+            if state.since_save >= SAVE_EVERY {
+                state.since_save = 0;
+                flush_due = true;
+            }
         }
+    }
+
+    // Persist outside the write guard: `save` takes the read lock, and the file
+    // I/O shouldn't block the scan tasks that are also calling `observe`.
+    if flush_due {
+        save();
     }
 }
 
@@ -394,6 +416,46 @@ mod tests {
         reset();
         init("LEGACY_STATIC", &model_path, &MlParams::default());
         let merged = predict_words("https://x.test/shop/checkout", 5);
+        assert!(merged.iter().any(|w| w == "receipt"), "merged={merged:?}");
+
+        reset();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn observe_flushes_model_every_save_every_calls() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        reset();
+        let dir = std::env::temp_dir().join(format!("ferox-ml-flush-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let model_path = dir.join("model.json").to_string_lossy().to_string();
+
+        init("REST_API", &model_path, &MlParams::default());
+
+        // Observe the same chain repeatedly so the flush->receipt transition stays
+        // well above the model's prune threshold once persisted. Before the
+        // SAVE_EVERY-th call the periodic flush hasn't fired, so the file isn't
+        // written (this run started cold, with no pre-existing model).
+        for _ in 0..(SAVE_EVERY - 1) {
+            observe("https://x.test/flush/receipt");
+        }
+        assert!(
+            !std::path::Path::new(&model_path).exists(),
+            "model should not be flushed before SAVE_EVERY observations"
+        );
+
+        // The SAVE_EVERY-th observation triggers an automatic flush — no explicit
+        // save() call — so an interrupted run keeps its learning.
+        observe("https://x.test/flush/receipt");
+        assert!(
+            std::path::Path::new(&model_path).exists(),
+            "model should be flushed on the SAVE_EVERY-th observation"
+        );
+
+        // A fresh init merges the auto-flushed learning back in.
+        reset();
+        init("LEGACY_STATIC", &model_path, &MlParams::default());
+        let merged = predict_words("https://x.test/flush", 5);
         assert!(merged.iter().any(|w| w == "receipt"), "merged={merged:?}");
 
         reset();

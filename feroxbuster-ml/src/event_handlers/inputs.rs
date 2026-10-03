@@ -56,8 +56,9 @@ impl TermInputHandler {
     fn start(&self) {
         tokio::task::spawn_blocking(Self::enter_handler);
 
-        if self.handles.config.save_state {
-            // start the ctrl+c handler
+        if self.handles.config.save_state || self.handles.config.ml {
+            // start the ctrl+c handler (also needed when ML is on, so the learned
+            // model is persisted on ctrl+c even if scan-state saving is disabled)
             let cloned = self.handles.clone();
 
             let result = ctrlc::set_handler(move || {
@@ -77,6 +78,14 @@ impl TermInputHandler {
     /// Writes the current state of the program to disk (if save_state is true) and then exits
     pub fn sigint_handler(handles: Arc<Handles>) -> Result<()> {
         log::trace!("enter: sigint_handler({handles:?})");
+
+        // ML layer: persist the model learned so far before we exit. The handler
+        // ends in process::exit, so clean_up's save() never runs on ctrl+c;
+        // without this the whole run's online learning would be lost. No-op if
+        // --ml-model is unset.
+        if handles.config.ml {
+            crate::ml::save();
+        }
 
         // check for STATE_FILENAME env var first; credit to Tobias Rauch for the idea
         let filename = if let Ok(path) = std::env::var("STATE_FILENAME") {
