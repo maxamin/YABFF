@@ -786,6 +786,36 @@ async fn update_app(
 /// to the shared orchestrator — no subprocess, and none of feroxbuster's global
 /// scan state. It covers the `--ml-loop` scan path (flat bounded scans); it does
 /// not crawl links (the loop never requests `extract_links`).
+/// Decide which WAF `PolicyTrigger` (if any) a target's cumulative tallies warrant,
+/// mirroring `requester.rs`: an absolute transport-error floor (`max(threads/2, 25)`)
+/// takes precedence, then a 403 wall (`>= HIGH_ERROR_RATIO`), then a 429 rate-limit
+/// (`>= HIGH_ERROR_RATIO/3`). The status-ratio checks are gated behind a request
+/// floor (`max(concurrency, 50)`) so a handful of probes can't trip a wall verdict.
+fn waf_trigger(
+    requests: u64,
+    n403: usize,
+    n429: usize,
+    errors: usize,
+    concurrency: usize,
+) -> Option<PolicyTrigger> {
+    let err_threshold = (concurrency / 2).max(25);
+    if errors >= err_threshold {
+        return Some(PolicyTrigger::Errors);
+    }
+    let floor = concurrency.max(50);
+    if (requests as usize) < floor || requests == 0 {
+        return None;
+    }
+    let rf = requests as f64;
+    if n403 as f64 / rf >= HIGH_ERROR_RATIO {
+        Some(PolicyTrigger::Status403)
+    } else if n429 as f64 / rf >= HIGH_ERROR_RATIO / 3.0 {
+        Some(PolicyTrigger::Status429)
+    } else {
+        None
+    }
+}
+
 struct InProcessRunner {
     client: reqwest::Client,
     rt: tokio::runtime::Runtime,
@@ -794,8 +824,11 @@ struct InProcessRunner {
     /// WAF-ban detector for this target (fresh per target, since the runner is
     /// rebuilt per target). Interior mutability: FeroxRunner::run takes &self.
     waf: std::cell::RefCell<WafBanDetector>,
-    /// cumulative (requests, 403s, 429s) seen for this target, feeding the detector
-    waf_tally: std::cell::RefCell<(u64, usize, usize)>,
+    /// cumulative (requests, 403s, 429s, transport-errors) seen for this target,
+    /// feeding the detector. `requests` counts every attempt — responses *and*
+    /// failed sends (timeouts, resets) — so a host that stalls/drops connections
+    /// (rather than cleanly 403ing) still accrues a signal the detector can act on.
+    waf_tally: std::cell::RefCell<(u64, usize, usize, usize)>,
 }
 
 impl ferox_ml_core::ferox::FeroxRunner for InProcessRunner {
@@ -818,7 +851,11 @@ impl ferox_ml_core::ferox::FeroxRunner for InProcessRunner {
         let client = self.client.clone();
         let conc = self.concurrency.max(1);
 
-        let responses: Vec<FeroxResponse> = self.rt.block_on(async move {
+        // Collect every attempt's outcome: Some(resp) for a completed request,
+        // None for a failed send (timeout, connection reset, TLS error). The Nones
+        // are the transport-error signal the WAF detector needs for stall-style
+        // blocks, so they are counted, not silently dropped.
+        let attempts: Vec<Option<FeroxResponse>> = self.rt.block_on(async move {
             futures::stream::iter(urls)
                 .map(|u| {
                     let client = client.clone();
@@ -847,10 +884,11 @@ impl ferox_ml_core::ferox::FeroxRunner for InProcessRunner {
                     }
                 })
                 .buffer_unordered(conc)
-                .filter_map(|x| async move { x })
                 .collect()
                 .await
         });
+        let batch_errors = attempts.iter().filter(|x| x.is_none()).count();
+        let responses: Vec<FeroxResponse> = attempts.into_iter().flatten().collect();
 
         // ---- WAF-ban detection on this batch (ml-loop path) ----
         // The in-process runner bypasses the normal requester, so detection is
@@ -860,8 +898,9 @@ impl ferox_ml_core::ferox::FeroxRunner for InProcessRunner {
         // orchestrator aborts THIS target (run_ml_loop logs it and moves to the
         // next); a transient block backs off (honoring Retry-After) and continues.
         {
-            let (requests, n403, n429) = {
+            let (requests, n403, n429, errors) = {
                 let mut tally = self.waf_tally.borrow_mut();
+                // every attempt counts toward requests: completed responses...
                 for r in &responses {
                     tally.0 += 1;
                     match r.status {
@@ -870,6 +909,9 @@ impl ferox_ml_core::ferox::FeroxRunner for InProcessRunner {
                         _ => {}
                     }
                 }
+                // ...and failed sends (the transport-error signal)
+                tally.0 += batch_errors as u64;
+                tally.3 += batch_errors;
                 *tally
             };
             {
@@ -880,24 +922,14 @@ impl ferox_ml_core::ferox::FeroxRunner for InProcessRunner {
                     }
                 }
             }
-            let floor = self.concurrency.max(50);
-            let trigger = if (requests as usize) >= floor && requests > 0 {
-                let rf = requests as f64;
-                if n403 as f64 / rf >= HIGH_ERROR_RATIO {
-                    Some(PolicyTrigger::Status403)
-                } else if n429 as f64 / rf >= HIGH_ERROR_RATIO / 3.0 {
-                    Some(PolicyTrigger::Status429)
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
+            let trigger = waf_trigger(requests, n403, n429, errors, self.concurrency);
             if let Some(trigger) = trigger {
                 let (verdict, retry_after) = {
                     let mut detector = self.waf.borrow_mut();
                     let retry = detector.last_retry_after();
-                    let sig = BanSignals::new(requests, n403, n429, 0).with_retry_after(retry);
+                    let sig = BanSignals::new(requests, n403, n429, errors)
+                        .with_retry_after(retry)
+                        .with_transport_spike(trigger == PolicyTrigger::Errors);
                     (detector.classify(&sig, Some(trigger)), retry)
                 };
                 let vendor = verdict
@@ -1103,7 +1135,7 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
             // AutoBail semantics: a confirmed ban aborts this target (the sweep
             // continues to the next); a transient block just backs off.
             waf: std::cell::RefCell::new(WafBanDetector::new(RequesterPolicy::AutoBail)),
-            waf_tally: std::cell::RefCell::new((0, 0, 0)),
+            waf_tally: std::cell::RefCell::new((0, 0, 0, 0)),
         };
         if multi {
             println!("\n=== [{}/{}] {} ===", i + 1, targets.len(), target);
@@ -1238,6 +1270,29 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn waf_trigger_fires_on_transport_error_floor() {
+        // concurrency 50 -> err_threshold = max(25,25) = 25. 25 failed sends with
+        // no 403/429 is a transport-error trigger, even below the request floor.
+        assert_eq!(waf_trigger(40, 0, 0, 25, 50), Some(PolicyTrigger::Errors));
+        // one short of the floor: no trigger yet
+        assert_eq!(waf_trigger(40, 0, 0, 24, 50), None);
+        // errors take precedence over an otherwise-quiet batch
+        assert_eq!(waf_trigger(200, 5, 0, 100, 50), Some(PolicyTrigger::Errors));
+    }
+
+    #[test]
+    fn waf_trigger_keeps_status_wall_semantics() {
+        // 403 wall above the request floor
+        assert_eq!(waf_trigger(100, 95, 0, 0, 50), Some(PolicyTrigger::Status403));
+        // 429 rate-limit (>= HIGH_ERROR_RATIO/3)
+        assert_eq!(waf_trigger(100, 0, 40, 0, 50), Some(PolicyTrigger::Status429));
+        // below the request floor, a 403 wall does not trip (too few samples)
+        assert_eq!(waf_trigger(10, 10, 0, 0, 50), None);
+        // quiet traffic: nothing
+        assert_eq!(waf_trigger(100, 5, 0, 0, 50), None);
+    }
 
     #[test]
     /// neither --insecure nor --server-certs given -> self_update keeps its own default client
