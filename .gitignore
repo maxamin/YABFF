@@ -20,3 +20,7 @@ feroxbuster-ml/.feroxml/
 
 # stray runtime logs
 *.log
+
+# ml-loop runtime artifacts (learned model + scan output written to the repo root)
+model.json
+testoutput
