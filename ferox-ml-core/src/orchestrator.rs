@@ -40,6 +40,26 @@ use crate::wordlist::{
 };
 use std::collections::{HashMap, HashSet};
 
+/// Persist the model learned so far during a campaign every this many rounds, so
+/// an uncatchable kill (SIGKILL) or crash loses at most this many rounds of
+/// learning rather than everything since the last target completed. Catchable
+/// signals stop cooperatively (see [`crate::request_stop`]) and save on exit.
+const SAVE_EVERY_ROUNDS: usize = 500;
+
+/// Write `model` to `model_path` (no-op if unset), creating parent dirs. Shared
+/// by the periodic flush, the cooperative-stop exit, and the end-of-run save.
+fn persist_model(model: &dyn PathModel, model_path: &str) {
+    if model_path.is_empty() {
+        return;
+    }
+    if let Ok(js) = model.save_json() {
+        if let Some(parent) = std::path::Path::new(model_path).parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(model_path, js);
+    }
+}
+
 /// Everything the caller learns from a campaign.
 #[derive(Debug, Clone)]
 pub struct Summary {
@@ -260,6 +280,21 @@ impl Campaign {
         while summary.rounds < self.cfg.max_rounds
             && summary.requests_used < self.cfg.request_budget
         {
+            // Cooperative stop (set from a host signal handler): save what we've
+            // learned and leave the loop cleanly. The end-of-run save below also
+            // runs, but saving here means an interrupt keeps the model even if
+            // later teardown is skipped.
+            if crate::stop_requested() {
+                persist_model(&*model, &self.cfg.model_path);
+                break;
+            }
+
+            // Periodic flush so a SIGKILL/crash (which can't be caught) loses at
+            // most SAVE_EVERY_ROUNDS rounds of learning.
+            if summary.rounds > 0 && summary.rounds % SAVE_EVERY_ROUNDS == 0 {
+                persist_model(&*model, &self.cfg.model_path);
+            }
+
             let arm = match sched.choose() {
                 Some(a) => a,
                 None => {
@@ -408,14 +443,7 @@ impl Campaign {
         }
 
         // persist what this run learned so the next scan starts smarter
-        if !self.cfg.model_path.is_empty() {
-            if let Ok(js) = model.save_json() {
-                if let Some(parent) = std::path::Path::new(&self.cfg.model_path).parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                let _ = std::fs::write(&self.cfg.model_path, js);
-            }
-        }
+        persist_model(&*model, &self.cfg.model_path);
 
         Ok(summary)
     }

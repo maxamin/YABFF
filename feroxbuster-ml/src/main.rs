@@ -959,6 +959,20 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
     // (state_dir) are shared across targets, so learning accumulates down the list
     // and only the first target pays the list-ranking cost. A failing target is
     // logged and the sweep continues.
+    // Signal handling for the loop: the --ml-loop path returns before the normal
+    // TermInputHandler is installed, so without this a ctrl+c/SIGTERM would kill
+    // the process outright and lose the in-progress target's learning. ctrlc's
+    // "termination" feature routes SIGINT/SIGTERM/SIGHUP here; the handler only
+    // flips the cooperative stop flag (async-signal-safe), and the orchestrator's
+    // round loop saves the model and exits cleanly at the next round boundary.
+    match ctrlc::set_handler(|| ferox_ml_core::request_stop()) {
+        Ok(()) => log::info!("ml-loop: stop-on-signal handler installed (SIGINT/SIGTERM/SIGHUP)"),
+        Err(e) => log::warn!(
+            "ml-loop: could not install signal handler ({e}); an interrupt may lose the \
+             in-progress target's learning (completed targets are already saved)"
+        ),
+    }
+
     // --output routing: the in-process ml-loop runner bypasses feroxbuster's
     // normal output handler, so discovered resources never reached --output.
     // Open it here (append/create) and write each target's hits as it finishes,
@@ -1036,6 +1050,18 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
                 }
             }
             Err(e) => eprintln!("[ml-loop] target {target} failed: {e}"),
+        }
+
+        // Stop the sweep on a caught signal. The target just finished (or the
+        // orchestrator exited its loop early) already saved the model, so we can
+        // leave the remaining targets unscanned without losing learning.
+        if ferox_ml_core::stop_requested() {
+            eprintln!(
+                "[ml-loop] interrupted: stopping after {}/{} targets (model saved)",
+                i + 1,
+                targets.len()
+            );
+            break;
         }
     }
     if multi {

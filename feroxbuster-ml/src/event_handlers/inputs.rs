@@ -33,7 +33,7 @@ pub struct TermInputHandler {
 /// implementation of event handler for terminal input
 ///
 /// kicks off the following handlers related to terminal input:
-///     ctrl+c handler that saves scan state to disk
+///     termination handler (SIGINT/SIGTERM/SIGHUP) that saves scan state to disk
 ///     enter handler that listens for enter during scans to drop into interactive scan management menu
 impl TermInputHandler {
     /// Create new event handler
@@ -57,8 +57,9 @@ impl TermInputHandler {
         tokio::task::spawn_blocking(Self::enter_handler);
 
         if self.handles.config.save_state || self.handles.config.ml {
-            // start the ctrl+c handler (also needed when ML is on, so the learned
-            // model is persisted on ctrl+c even if scan-state saving is disabled)
+            // start the termination handler (ctrlc's "termination" feature routes
+            // SIGINT/SIGTERM/SIGHUP here). Also needed when ML is on, so the learned
+            // model is persisted on those signals even if scan-state saving is off.
             let cloned = self.handles.clone();
 
             let result = ctrlc::set_handler(move || {
@@ -66,7 +67,7 @@ impl TermInputHandler {
             });
 
             if result.is_err() {
-                log::warn!("Could not set Ctrl+c handler; scan state will not be saved");
+                log::warn!("Could not set termination handler; scan state will not be saved");
                 self.handles
                     .stats
                     .send(Command::AddError(StatError::Other))
@@ -80,7 +81,7 @@ impl TermInputHandler {
         log::trace!("enter: sigint_handler({handles:?})");
 
         // ML layer: persist the model learned so far before we exit. The handler
-        // ends in process::exit, so clean_up's save() never runs on ctrl+c;
+        // ends in process::exit, so clean_up's save() never runs on a signal;
         // without this the whole run's online learning would be lost. No-op if
         // --ml-model is unset.
         if handles.config.ml {
@@ -100,7 +101,7 @@ impl TermInputHandler {
 
         let warning = format!(
             "🚨 Caught {} 🚨 saving scan state to {} ...",
-            style("ctrl+c").yellow(),
+            style("termination signal").yellow(),
             filename
         );
 

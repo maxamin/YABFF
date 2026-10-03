@@ -53,7 +53,9 @@ dirs = "5.0"
 regex = "1.11"
 crossterm = "0.27"
 rlimit = "0.10"
-ctrlc = "3.4"
+# "termination" also routes SIGTERM/SIGHUP (e.g. kill/pkill) through our handler,
+# so the learned model is persisted on those too, not just ctrl+c (SIGINT).
+ctrlc = { version = "3.4", features = ["termination"] }
 anyhow = "1.0"
 leaky-bucket = "1.1"
 gaoya = "0.2"

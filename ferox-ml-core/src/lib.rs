@@ -44,6 +44,25 @@ pub mod wordlist;
 
 pub use profiles::PROFILES;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Cooperative stop flag. A host (e.g. the `--ml-loop` driver) sets this from a
+/// signal handler; the orchestrator's round loop checks it each round and exits
+/// cleanly, persisting the model on the way out. Signal handlers can only touch
+/// async-signal-safe state, so they set this atomic and let normal code do the
+/// saving — never save from inside the handler itself.
+static STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+/// Request that in-flight campaigns stop at the next round boundary.
+pub fn request_stop() {
+    STOP_REQUESTED.store(true, Ordering::SeqCst);
+}
+
+/// Whether a stop has been requested via [`request_stop`].
+pub fn stop_requested() -> bool {
+    STOP_REQUESTED.load(Ordering::SeqCst)
+}
+
 /// Lightweight view of a probe/scan response for fingerprinting and learning.
 ///
 /// Each tool builds this from its own native response type (feroxbuster's
