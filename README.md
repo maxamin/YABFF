@@ -296,6 +296,12 @@ feroxbuster --ml-loop --ml-list-dir ./lists --ml-algo dynsdt \
 feroxbuster --ml-loop --ml-list-dir /usr/share/seclists/Discovery/Web-Content \
             --ml-algo dynsdt --ml-model ./model.json -u https://target.test
 # (list mode defaults to unlimited depth & every entry; bound with --depth N / --ml-list-max N)
+
+# a whole target list — pipe hosts via --stdin (model + ranked-pool cache shared
+# across targets, so learning accumulates and the list is ranked only once)
+cat targets.txt | feroxbuster --ml-loop --stdin \
+                 --ml-list-dir /usr/share/seclists/Discovery/Web-Content \
+                 --ml-list-max 20000 --depth 4 --ml-model ./model.json
 ```
 
 In list mode the wordlist directory is loaded **recursively** (the whole tree, e.g.

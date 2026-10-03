@@ -868,8 +868,28 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
     use ferox_ml_core::config::Config as MlConfig;
     use ferox_ml_core::orchestrator::Campaign;
 
-    if config.target_url.is_empty() {
-        anyhow::bail!("--ml-loop requires a target URL (-u/--url)");
+    // Gather the target list: URLs from --stdin (cached during config parsing) plus
+    // -u/--url, so --ml-loop runs over a whole list, not just one host. Bare hosts
+    // get an https:// scheme; duplicates and blanks are dropped (order preserved).
+    let mut targets: Vec<String> = config.cached_stdin.clone();
+    if !config.target_url.is_empty() {
+        targets.push(config.target_url.clone());
+    }
+    let mut seen = std::collections::HashSet::new();
+    targets = targets
+        .into_iter()
+        .map(|t| {
+            let s = t.trim().to_string();
+            if s.is_empty() || s.contains("://") {
+                s
+            } else {
+                format!("https://{s}")
+            }
+        })
+        .filter(|t| !t.is_empty() && seen.insert(t.clone()))
+        .collect();
+    if targets.is_empty() {
+        anyhow::bail!("--ml-loop requires at least one target (-u/--url, or a list via --stdin)");
     }
 
     let mut cfg = MlConfig {
@@ -922,41 +942,66 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
         cfg.seed_per_round = 10;
     }
 
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .with_context(|| "could not build runtime for --ml-loop")?;
-    let runner = InProcessRunner {
-        client: config.client.clone(),
-        rt,
-        concurrency: if config.rate_limit > 0 {
-            config.threads.min(config.rate_limit)
-        } else {
-            config.threads
-        },
-        status_codes: config.status_codes.clone(),
+    let concurrency = if config.rate_limit > 0 {
+        config.threads.min(config.rate_limit)
+    } else {
+        config.threads
     };
 
     log::info!(
-        "ml-loop: in-process runner (scheduler={}, rounds<= {})",
+        "ml-loop: {} target(s), in-process runner (scheduler={}, algo={})",
+        targets.len(),
         cfg.scheduler,
-        cfg.max_rounds
+        cfg.algo
     );
 
-    let summary = Campaign::new(cfg, Box::new(runner)).run(&config.target_url)?;
-
-    println!("=== feroxbuster --ml-loop summary ===");
-    println!("target           : {}", summary.target);
-    println!("profile          : {}", summary.profile);
-    println!("algorithm        : {}", summary.algo);
-    println!("rounds           : {}", summary.rounds);
-    println!("requests used    : {}", summary.requests_used);
-    println!("resources found  : {}", summary.discovered.len());
-    println!("predicted hits   : {}", summary.predicted_hits);
-    println!("filtered soft404 : {}", summary.filtered_soft404);
-    println!("out-of-scope drop: {}", summary.dropped_out_of_scope);
-    for (url, status) in &summary.discovered {
-        println!("  {status} {url}");
+    // Scan each target in turn. The model (--ml-model) and the ranked-pool cache
+    // (state_dir) are shared across targets, so learning accumulates down the list
+    // and only the first target pays the list-ranking cost. A failing target is
+    // logged and the sweep continues.
+    let multi = targets.len() > 1;
+    let mut scanned = 0usize;
+    let mut total_found = 0usize;
+    for (i, target) in targets.iter().enumerate() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .with_context(|| "could not build runtime for --ml-loop")?;
+        let runner = InProcessRunner {
+            client: config.client.clone(),
+            rt,
+            concurrency,
+            status_codes: config.status_codes.clone(),
+        };
+        if multi {
+            println!("\n=== [{}/{}] {} ===", i + 1, targets.len(), target);
+        }
+        match Campaign::new(cfg.clone(), Box::new(runner)).run(target) {
+            Ok(summary) => {
+                scanned += 1;
+                total_found += summary.discovered.len();
+                println!("=== feroxbuster --ml-loop summary ===");
+                println!("target           : {}", summary.target);
+                println!("profile          : {}", summary.profile);
+                println!("algorithm        : {}", summary.algo);
+                println!("rounds           : {}", summary.rounds);
+                println!("requests used    : {}", summary.requests_used);
+                println!("resources found  : {}", summary.discovered.len());
+                println!("predicted hits   : {}", summary.predicted_hits);
+                println!("filtered soft404 : {}", summary.filtered_soft404);
+                println!("out-of-scope drop: {}", summary.dropped_out_of_scope);
+                for (url, status) in &summary.discovered {
+                    println!("  {status} {url}");
+                }
+            }
+            Err(e) => eprintln!("[ml-loop] target {target} failed: {e}"),
+        }
+    }
+    if multi {
+        println!(
+            "\n=== feroxbuster --ml-loop: {scanned}/{} targets scanned, {total_found} resources total ===",
+            targets.len()
+        );
     }
     Ok(())
 }

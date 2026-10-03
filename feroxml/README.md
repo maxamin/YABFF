@@ -118,6 +118,7 @@ feroxml --learn --targets <file> --i-have-authorization --model <path> [options]
 | `--request-budget <n>` | Global request cap (default 20000). |
 | `--rate-limit <n>` | Requests/sec passed to feroxbuster (0 = unlimited). |
 | `--threads <n>` | feroxbuster threads (default 20). |
+| `--algo <name>` | Prediction algorithm: `markov` (default, best by benchmarked results) · `trie` · `dynsdt` · `tst` · `auto`. |
 | `--scheduler <name>` | `thompson` (default), `ucb1`, `round_robin`. |
 | `--classifier <name>` | `nearest_centroid` (default), `kmeans`. |
 | `-k, --insecure` | Disable TLS verification (adds `-k` to feroxbuster). |

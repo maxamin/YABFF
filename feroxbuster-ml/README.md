@@ -96,10 +96,35 @@ feroxbuster --ml-model ./model.json -u https://target.test -w common.txt
 | `--ml-predictions <n>` | Base predictions injected per directory (default `25`, scaled 25–100% by the bandit). |
 | `--ml-scheduler <name>` | Budget bandit: `thompson` (default), `ucb1`, or `round_robin`. |
 | `--no-ml-rank` | Disable BM25 re-ranking of predictions. |
-| `--ml-loop` | Run the **adaptive bounded-scan feedback loop** (the shared `ferox-ml-core` orchestrator: budgeted, Thompson-scheduled rounds) instead of a single scan — the same `Campaign` as the standalone `feroxml`, hosted in this binary and run **fully in-process** (no subprocess), using feroxbuster's own configured HTTP client. |
+| `--ml-loop` | Run the **adaptive bounded-scan feedback loop** (the shared `ferox-ml-core` orchestrator: budgeted, Thompson-scheduled rounds) instead of a single scan — the same `Campaign` as the standalone `feroxml`, hosted in this binary and run **fully in-process** (no subprocess), using feroxbuster's own configured HTTP client. Works on **one target (`-u`) or a whole list (via `--stdin`)**. |
+| `--ml-algo <name>` | Prediction algorithm for `--ml-loop`: `markov` (default, best by benchmarked results) · `trie` · `dynsdt` · `tst` · `auto`. |
+| `--ml-list-dir <dir>` | Directory of wordlists (loaded **recursively**, ranked by signal, cached) to drive `--ml-loop` — point it at SecLists `Discovery/Web-Content`. Skips fingerprinting; re-applies the list to every discovered directory; defaults to **unlimited depth** (bound with `--depth N`). |
+| `--ml-list-chunk <n>` | List entries injected per directory per round in list mode (default `200`). |
+| `--ml-list-max <n>` | Cap on entries loaded from the tree (keeps the **top-N by signal**); `0` = unlimited (default). |
 
 These (plus the advanced `ml_soft404` / `ml_fp_margin` knobs) can also be set in
 [`ferox-config.toml`](ferox-config.toml.example).
+
+### List-driven scanning (SecLists directory tree)
+
+```bash
+# scan with the whole SecLists Discovery tree (recursive, signal-ranked, cached)
+feroxbuster --ml-loop --ml-list-dir /usr/share/seclists/Discovery/Web-Content \
+            --ml-model ./model.json -u http://target.test
+# bound a large run:  --ml-list-max 20000 --depth 4 --scan-limit 20
+
+# a whole target list — pipe hosts via --stdin; the model and the ranked-pool
+# cache are shared across targets, so learning accumulates and the list is
+# ranked only once:
+cat targets.txt | feroxbuster --ml-loop --stdin \
+                 --ml-list-dir /usr/share/seclists/Discovery/Web-Content \
+                 --ml-list-max 20000 --depth 4 --ml-model ./model.json
+```
+
+The first list run ranks the tree (~minutes for full SecLists) and caches it under
+`state_dir` (`.feroxml`); later runs load the ranked pool in seconds. Progress is
+printed to stderr (`list pool loaded …`, then `rounds=/requests=/found=/arms=`).
+**Only point it at hosts you are authorized to test.**
 
 ## How the ML layer works
 
