@@ -272,6 +272,13 @@ impl Campaign {
         // seed from what the probe already revealed: record discoveries, feed
         // the ranker, and enqueue any discovered directory as an arm to expand.
         for r in &probe_resps {
+            // The random calibration probes exist only to learn the soft-404
+            // signature; they are not scan results, so skip them before any
+            // tally. (Otherwise each would match the signature it just helped
+            // define and inflate `filtered_soft404` past `requests_used`.)
+            if random_paths.iter().any(|p| r.url.contains(p.as_str())) {
+                continue;
+            }
             if !is_hit(r, &self.cfg) {
                 continue;
             }
@@ -997,6 +1004,44 @@ mod tests {
             s.discovered
         );
         assert!(s.filtered_soft404 >= 1, "summary={s:?}");
+        // invariant: never more filtered than requested (Bug 2 regression)
+        assert!(
+            s.filtered_soft404 <= s.requests_used,
+            "filtered must not exceed requests: {s:?}"
+        );
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&dir));
+    }
+
+    #[test]
+    /// Bug 2: the random calibration probes define the soft-404 signature and so
+    /// match it, but they are not scan results and must not be tallied as
+    /// `filtered_soft404` (which previously pushed it past `requests_used`).
+    fn soft404_count_excludes_calibration_probes() {
+        let dir = write_list_dir("s404probe", &["alpha", "beta"]);
+        // round responses are all DISTINCT from the soft-404 signature, so the
+        // only soft-404-matching responses in the whole run are the random probes.
+        let mut runner = ProgRunner::new().arm(
+            "https://x.test/",
+            vec![
+                sig_resp("https://x.test/alpha", 200, 500, 50, 10),
+                sig_resp("https://x.test/beta", 200, 600, 60, 12),
+            ],
+        );
+        runner.echo_probe_soft404 = true; // random probes carry the soft-404 sig
+
+        let mut cfg = list_cfg(&dir);
+        cfg.use_soft404_filter = true;
+        cfg.max_rounds = 5;
+
+        let s = Campaign::new(cfg, Box::new(runner)).run("https://x.test").unwrap();
+        assert_eq!(
+            s.filtered_soft404, 0,
+            "calibration probes must not be counted as filtered results: {s:?}"
+        );
+        assert!(
+            s.filtered_soft404 <= s.requests_used,
+            "filtered must not exceed requests: {s:?}"
+        );
         let _ = std::fs::remove_dir_all(std::path::Path::new(&dir));
     }
 
