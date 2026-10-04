@@ -792,27 +792,51 @@ async fn update_app(
 /// to the shared orchestrator — no subprocess, and none of feroxbuster's global
 /// scan state. It covers the `--ml-loop` scan path (flat bounded scans); it does
 /// not crawl links (the loop never requests `extract_links`).
+/// Minimum share of a target's cumulative requests that must be transport errors
+/// (resets/timeouts/TLS failures) before they read as a ban rather than noise.
+/// Direct: errors must be the clear majority. Through a proxy: they must almost
+/// entirely dominate — a SOCKS proxy / Tor leaks scattered transport errors on
+/// perfectly healthy scans, and keying the ban on an absolute count made any long
+/// enough run cross the floor and self-ban (see `proxied` below).
+const ERROR_BAN_RATIO: f64 = 0.60;
+const ERROR_BAN_RATIO_PROXIED: f64 = 0.95;
+
 /// Decide which WAF `PolicyTrigger` (if any) a target's cumulative tallies warrant,
-/// mirroring `requester.rs`: an absolute transport-error floor (`max(threads/2, 25)`)
-/// takes precedence, then a 403 wall (`>= HIGH_ERROR_RATIO`), then a 429 rate-limit
-/// (`>= HIGH_ERROR_RATIO/3`). The status-ratio checks are gated behind a request
-/// floor (`max(concurrency, 50)`) so a handful of probes can't trip a wall verdict.
+/// mirroring `requester.rs`: a transport-error stall, then a 403 wall
+/// (`>= HIGH_ERROR_RATIO`), then a 429 rate-limit (`>= HIGH_ERROR_RATIO/3`). All
+/// three are gated behind a request floor (`max(concurrency, 50)`) so a handful of
+/// probes can't trip a verdict.
+///
+/// The transport-error trigger is a RATIO, not a bare cumulative count: it needs
+/// both an absolute floor (`max(threads/2, 25)`, so a tiny target can't trip on a
+/// couple of failures) AND errors to be a dominant share of all attempts
+/// ([`ERROR_BAN_RATIO`], or [`ERROR_BAN_RATIO_PROXIED`] when `proxied`). The old
+/// count-only form self-banned every long scan over a lossy link — including every
+/// Tor/proxychains run — once sporadic errors summed past the floor, even while the
+/// vast majority of requests were succeeding.
 fn waf_trigger(
     requests: u64,
     n403: usize,
     n429: usize,
     errors: usize,
     concurrency: usize,
+    proxied: bool,
 ) -> Option<PolicyTrigger> {
-    let err_threshold = (concurrency / 2).max(25);
-    if errors >= err_threshold {
-        return Some(PolicyTrigger::Errors);
-    }
     let floor = concurrency.max(50);
     if (requests as usize) < floor || requests == 0 {
         return None;
     }
     let rf = requests as f64;
+
+    let err_floor = (concurrency / 2).max(25);
+    let err_ratio = if proxied {
+        ERROR_BAN_RATIO_PROXIED
+    } else {
+        ERROR_BAN_RATIO
+    };
+    if errors >= err_floor && errors as f64 / rf >= err_ratio {
+        return Some(PolicyTrigger::Errors);
+    }
     if n403 as f64 / rf >= HIGH_ERROR_RATIO {
         Some(PolicyTrigger::Status403)
     } else if n429 as f64 / rf >= HIGH_ERROR_RATIO / 3.0 {
@@ -835,6 +859,10 @@ struct InProcessRunner {
     /// failed sends (timeouts, resets) — so a host that stalls/drops connections
     /// (rather than cleanly 403ing) still accrues a signal the detector can act on.
     waf_tally: std::cell::RefCell<(u64, usize, usize, usize)>,
+    /// whether the scan runs through a proxy (explicit `--proxy` or a transparent
+    /// proxychains wrapper). Relaxes the transport-error ban ratio — proxy hiccups
+    /// are expected noise, not a server ban.
+    proxied: bool,
 }
 
 impl ferox_ml_core::ferox::FeroxRunner for InProcessRunner {
@@ -938,7 +966,7 @@ impl ferox_ml_core::ferox::FeroxRunner for InProcessRunner {
                     }
                 }
             }
-            let trigger = waf_trigger(requests, n403, n429, errors, self.concurrency);
+            let trigger = waf_trigger(requests, n403, n429, errors, self.concurrency, self.proxied);
             if let Some(trigger) = trigger {
                 let (verdict, retry_after) = {
                     let mut detector = self.waf.borrow_mut();
@@ -1113,6 +1141,25 @@ fn run_ml_loop(config: &Arc<Configuration>) -> Result<()> {
         config.threads
     };
 
+    // Proxy awareness for the WAF transport-error trigger: an explicit --proxy, or
+    // a transparent proxychains wrapper (LD_PRELOAD'd, so config.proxy is empty but
+    // these env vars are present on the process). Through a proxy, scattered
+    // transport errors are expected noise, so the ban ratio is relaxed.
+    let proxied = !config.proxy.is_empty()
+        || std::env::var_os("PROXYCHAINS_CONF_FILE").is_some()
+        || std::env::var("LD_PRELOAD")
+            .map(|v| v.to_ascii_lowercase().contains("proxychains"))
+            .unwrap_or(false);
+    if proxied {
+        // eprintln, not log::info: the --ml-loop path returns before wrapped_main
+        // initializes the logger, so this matches the orchestrator's user-facing
+        // `[ml-loop]` lines and is actually visible.
+        eprintln!(
+            "[ml-loop] proxy detected — relaxing the WAF transport-error ban threshold \
+             (proxy hiccups aren't a server ban)"
+        );
+    }
+
     log::info!(
         "ml-loop: {} target(s), in-process runner (scheduler={}, algo={})",
         targets.len(),
@@ -1179,6 +1226,7 @@ fn run_ml_loop(config: &Arc<Configuration>) -> Result<()> {
             // continues to the next); a transient block just backs off.
             waf: std::cell::RefCell::new(WafBanDetector::new(RequesterPolicy::AutoBail)),
             waf_tally: std::cell::RefCell::new((0, 0, 0, 0)),
+            proxied,
         };
         if multi {
             println!("\n=== [{}/{}] {} ===", i + 1, targets.len(), target);
@@ -1353,26 +1401,44 @@ mod tests {
     use super::*;
 
     #[test]
-    fn waf_trigger_fires_on_transport_error_floor() {
-        // concurrency 50 -> err_threshold = max(25,25) = 25. 25 failed sends with
-        // no 403/429 is a transport-error trigger, even below the request floor.
-        assert_eq!(waf_trigger(40, 0, 0, 25, 50), Some(PolicyTrigger::Errors));
-        // one short of the floor: no trigger yet
-        assert_eq!(waf_trigger(40, 0, 0, 24, 50), None);
-        // errors take precedence over an otherwise-quiet batch
-        assert_eq!(waf_trigger(200, 5, 0, 100, 50), Some(PolicyTrigger::Errors));
+    fn waf_trigger_transport_errors_need_floor_and_ratio() {
+        // concurrency 50 -> request floor 50, err_floor max(25,25)=25.
+        // A genuine stall: errors dominate (190/200 = 0.95 >= 0.60) -> ban.
+        assert_eq!(waf_trigger(200, 0, 0, 190, 50, false), Some(PolicyTrigger::Errors));
+        // Scattered errors over a healthy direct scan: above the absolute floor but
+        // only a minority share (100/300 = 0.33 < 0.60) -> NOT a ban. This is the
+        // case the old count-only floor false-banned.
+        assert_eq!(waf_trigger(300, 0, 0, 100, 50, false), None);
+        // Below the request floor: never trips, regardless of error count.
+        assert_eq!(waf_trigger(40, 0, 0, 40, 50, false), None);
+        // Below the absolute error floor even at a high ratio: too few samples.
+        assert_eq!(waf_trigger(60, 0, 0, 20, 50, false), None);
+    }
+
+    #[test]
+    fn waf_trigger_proxied_relaxes_transport_error_ratio() {
+        // concurrency 200 -> floor 200, err_floor 100. A Tor-style run: errors
+        // present and over the absolute floor, but a minority share (300/900 ≈ 0.33).
+        // Direct that already wouldn't ban at 0.60; proxied (0.95) is stricter still.
+        assert_eq!(waf_trigger(900, 0, 0, 300, 200, true), None);
+        // Even a clear majority (600/900 ≈ 0.67) is tolerated through a proxy...
+        assert_eq!(waf_trigger(900, 0, 0, 600, 200, true), None);
+        // ...while direct, that same majority is a ban.
+        assert_eq!(waf_trigger(900, 0, 0, 600, 200, false), Some(PolicyTrigger::Errors));
+        // A true stall still bans through a proxy (870/900 ≈ 0.97 >= 0.95).
+        assert_eq!(waf_trigger(900, 0, 0, 870, 200, true), Some(PolicyTrigger::Errors));
     }
 
     #[test]
     fn waf_trigger_keeps_status_wall_semantics() {
         // 403 wall above the request floor
-        assert_eq!(waf_trigger(100, 95, 0, 0, 50), Some(PolicyTrigger::Status403));
+        assert_eq!(waf_trigger(100, 95, 0, 0, 50, false), Some(PolicyTrigger::Status403));
         // 429 rate-limit (>= HIGH_ERROR_RATIO/3)
-        assert_eq!(waf_trigger(100, 0, 40, 0, 50), Some(PolicyTrigger::Status429));
+        assert_eq!(waf_trigger(100, 0, 40, 0, 50, false), Some(PolicyTrigger::Status429));
         // below the request floor, a 403 wall does not trip (too few samples)
-        assert_eq!(waf_trigger(10, 10, 0, 0, 50), None);
+        assert_eq!(waf_trigger(10, 10, 0, 0, 50, false), None);
         // quiet traffic: nothing
-        assert_eq!(waf_trigger(100, 5, 0, 0, 50), None);
+        assert_eq!(waf_trigger(100, 5, 0, 0, 50, false), None);
     }
 
     #[test]

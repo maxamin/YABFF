@@ -328,6 +328,13 @@ impl Campaign {
         // never generalize, and list mode would record the entire wordlist as
         // findings. That case is unrecoverable, so abandon the target, the same way
         // a confirmed WAF ban bails.
+        //
+        // A plain add-trailing-slash redirect (`/x` -> `/x/`) is NOT this: it's
+        // uniform slash-normalization, and `signature_of` collapses every such
+        // probe onto one `with_self_redirect_class` signature, so they aren't
+        // distinct and don't trip this guard. The content behind the slashes stays
+        // discoverable; the normalized junk is caught by the soft-404 filter, which
+        // learns the class from these same probes.
         if list_mode && self.cfg.use_soft404_filter {
             let random_hit_sigs: Vec<Signature> = probe_resps
                 .iter()
@@ -863,13 +870,59 @@ pub struct LearnSummary {
     pub model_path: String,
 }
 
+/// The path component of a redirect `Location`, whether absolute
+/// (`https://h/a/b`) or root-relative (`/a/b`), with the volatile query/matrix
+/// tail (`?…`, `;…`) stripped. `None` for a relative value without a leading
+/// slash (unusual for `Location`), which we don't try to resolve.
+fn redirect_location_path(location: &str) -> Option<String> {
+    let no_tail = location.split(['?', ';']).next().unwrap_or(location).trim();
+    if no_tail.is_empty() {
+        None
+    } else if let Some((_scheme, rest)) = no_tail.split_once("://") {
+        // absolute: drop scheme://host, keep from the first '/' of the path
+        Some(rest.find('/').map(|i| rest[i..].to_string()).unwrap_or_else(|| "/".to_string()))
+    } else if no_tail.starts_with('/') {
+        Some(no_tail.to_string())
+    } else {
+        None
+    }
+}
+
+/// True when a redirect just appends a trailing slash to (or points straight back
+/// at) the requested path — `/x` → `/x/` or `/x` → `/x`. This is uniform server
+/// slash-normalization, not a per-path wildcard catch-all; the root (`/`) is
+/// excluded. See [`Signature::with_self_redirect_class`].
+fn is_add_slash_self_redirect(req_path: &str, location: &str) -> bool {
+    let base = req_path.trim_end_matches('/');
+    if base.is_empty() {
+        return false; // root target, not a word hit
+    }
+    match redirect_location_path(location) {
+        Some(loc_path) => {
+            let loc = loc_path.trim_end_matches('/');
+            loc == base
+        }
+        None => false,
+    }
+}
+
 fn signature_of(r: &FeroxResponse) -> Signature {
     let sig = Signature::new(r.status, r.content_length, r.word_count, r.line_count);
     // A redirect's body is empty/boilerplate, so the only discriminator between a
     // real directory hit and a catch-all soft-404 is where it points: fold the
     // Location in so distinct-target redirects don't collapse onto the probe's.
     if (300..400).contains(&r.status) {
-        sig.with_location(r.header("location"))
+        match r.header("location") {
+            // A pure add-trailing-slash (or self) redirect carries no per-path
+            // signal — the server applies it to every path alike — so collapse it
+            // onto one class rather than hashing its echoed path. Keeps the
+            // calibration guard from reading uniform normalization as a wildcard
+            // catch-all, and lets the soft-404 filter generalize such redirects.
+            Some(loc) if is_add_slash_self_redirect(&r.path, loc) => {
+                sig.with_self_redirect_class()
+            }
+            loc => sig.with_location(loc),
+        }
     } else {
         // A body response carries its SimHash (when the runner computed one) so the
         // filter can match 200-shell catch-alls by template regardless of size.
@@ -1335,6 +1388,22 @@ mod tests {
         }
     }
 
+    /// A 301 that appends a trailing slash to its own path (`{base}/{word}` ->
+    /// `{base}/{word}/`), with `path` and the `location` header populated as the
+    /// real runner sets them — so `signature_of` sees an add-slash self-redirect.
+    fn add_slash_resp(base: &str, word: &str) -> FeroxResponse {
+        let url = format!("{base}/{word}");
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("location".to_string(), format!("{url}/"));
+        FeroxResponse {
+            url,
+            path: format!("/{word}"),
+            status: 301,
+            headers,
+            ..Default::default()
+        }
+    }
+
     /// A fake runner with full control over the probe and per-arm responses, and
     /// a record of every call made (for budget/round/prediction assertions).
     struct ProgRunner {
@@ -1347,6 +1416,10 @@ mod tests {
         /// word (a wildcard/blanket redirect whose Location echoes the path), to
         /// exercise the list-mode catch-all guard
         echo_probe_distinct_hits: bool,
+        /// when true, synthesize a plain add-trailing-slash 301 per probed word
+        /// (`/x` -> `/x/`), i.e. uniform slash-normalization the guard must NOT
+        /// treat as a wildcard catch-all
+        echo_probe_add_slash: bool,
         /// canned responses per arm URL (round calls)
         by_arm: std::collections::HashMap<String, Vec<FeroxResponse>>,
         /// every (url, word-count, all_codes) tuple the orchestrator requested
@@ -1359,6 +1432,7 @@ mod tests {
                 probe: Vec::new(),
                 echo_probe_soft404: false,
                 echo_probe_distinct_hits: false,
+                echo_probe_add_slash: false,
                 by_arm: std::collections::HashMap::new(),
                 calls: RefCell::new(Vec::new()),
             }
@@ -1394,6 +1468,10 @@ mod tests {
                         // signature, mimicking a per-path wildcard redirect
                         .map(|(i, w)| sig_resp(&format!("{base}/{w}"), 301, 100 + i as u64 * 16, 2, 1))
                         .collect());
+                }
+                if self.echo_probe_add_slash {
+                    let base = args.url.trim_end_matches('/').to_string();
+                    return Ok(args.words.iter().map(|w| add_slash_resp(&base, w)).collect());
                 }
                 return Ok(self.probe.clone());
             }
@@ -1480,6 +1558,49 @@ mod tests {
             err.to_string().contains("catch-all"),
             "unexpected error: {err}"
         );
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&dir));
+    }
+
+    #[test]
+    /// A host that add-trailing-slash redirects EVERY path (the random probes
+    /// included) is uniform slash-normalization, NOT a wildcard catch-all. It must
+    /// not be abandoned: the real 200 behind the slashes is discovered, while the
+    /// junk add-slash redirect — matching the class the probes taught the filter —
+    /// is suppressed as a soft-404.
+    fn list_mode_add_slash_host_not_abandoned_and_junk_filtered() {
+        let dir = write_list_dir("addslash", &["real", "ghost"]);
+        let base = "https://slash.test";
+        let runner = {
+            let mut r = ProgRunner::new();
+            r.echo_probe_add_slash = true; // random probes -> add-slash 301s
+            // the root arm serves a real page and a junk add-slash redirect
+            r.arm(
+                &format!("{base}/"),
+                vec![
+                    sig_resp(&format!("{base}/real"), 200, 500, 50, 10),
+                    add_slash_resp(base, "ghost"),
+                ],
+            )
+        };
+
+        let mut cfg = list_cfg(&dir);
+        cfg.use_soft404_filter = true;
+        cfg.max_rounds = 5;
+
+        let s = Campaign::new(cfg, Box::new(runner))
+            .run(base)
+            .expect("an add-slash host must scan, not bail");
+        assert!(
+            s.discovered.iter().any(|(u, _)| u.ends_with("/real")),
+            "the real page must be discovered: {:?}",
+            s.discovered
+        );
+        assert!(
+            !s.discovered.iter().any(|(u, _)| u.ends_with("/ghost")),
+            "the junk add-slash redirect must be filtered: {:?}",
+            s.discovered
+        );
+        assert!(s.filtered_soft404 >= 1, "expected a soft-404 filtered: {s:?}");
         let _ = std::fs::remove_dir_all(std::path::Path::new(&dir));
     }
 

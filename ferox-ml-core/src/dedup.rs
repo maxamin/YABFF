@@ -143,7 +143,33 @@ impl Signature {
         };
         self
     }
+
+    /// Mark this redirect as the "add-trailing-slash self-redirect" class
+    /// (`/x` → `/x/`, or `/x` → `/x`), collapsing every such redirect onto one
+    /// signature instead of letting each hash its own echoed path via
+    /// [`Self::with_location`].
+    ///
+    /// Slash-normalization is applied uniformly by the server to *every* path —
+    /// real or absent — so a per-path `loc` here is noise, not signal, and it
+    /// breaks the two consumers that read redirect signatures: the calibration
+    /// guard mistakes uniform normalization for a distinct-per-path wildcard
+    /// catch-all (and abandons a perfectly scannable host), and the soft-404
+    /// filter can never generalize the junk redirects to drop them. Collapsing to
+    /// one class fixes both — and stays precise, because the class is only ever
+    /// *filtered* when the random calibration probes themselves add-slash (so it
+    /// gets learned as bogus); on a host that redirects only real directories, the
+    /// class is never learned and a genuine `/admin` → `/admin/` still survives.
+    pub fn with_self_redirect_class(mut self) -> Self {
+        self.loc = ADD_SLASH_SELF_REDIRECT;
+        self
+    }
 }
+
+/// Reserved [`Signature::loc`] value for the add-trailing-slash self-redirect
+/// class (see [`Signature::with_self_redirect_class`]). A fixed sentinel rather
+/// than a path hash, so all such redirects collide; the high tag bits make an
+/// accidental collision with a real `fnv1a64` Location-path hash negligible.
+pub const ADD_SLASH_SELF_REDIRECT: u64 = 0xA115_5147_0000_0001;
 
 /// Relative tolerance for the fuzzy body-shape match (Layer 2). A response whose
 /// bucketed length, word count and line count are all within this fraction of a
