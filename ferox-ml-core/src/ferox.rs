@@ -30,6 +30,11 @@ pub struct FeroxResponse {
     pub line_count: u64,
     #[serde(default)]
     pub headers: HashMap<String, String>,
+    /// 64-bit SimHash of the response body, when the runner has it (the in-process
+    /// `--ml-loop` runner computes it from the fetched body; the NDJSON stream has
+    /// no body, so it stays 0). Feeds the soft-404 body-template match (Layer 2b).
+    #[serde(default)]
+    pub body_simhash: u64,
 }
 
 impl FeroxResponse {

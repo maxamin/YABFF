@@ -62,7 +62,7 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
 /// the `Location` target into the signature so only redirects pointing at the
 /// *same* place collide — a generic catch-all redirect stays filtered, while a
 /// self-referential directory redirect (unique `Location` per path) survives.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Signature {
     pub status: u16,
     pub len_bucket: u64,
@@ -70,6 +70,37 @@ pub struct Signature {
     pub lines: u64,
     /// Hash of the redirect `Location` (0 when absent / not a redirect).
     pub loc: u64,
+    /// 64-bit SimHash of the response body (0 when no body is available, e.g. the
+    /// NDJSON stream which carries only counts). Used ONLY by the fuzzy body match
+    /// (Layer 2b) via Hamming distance; deliberately excluded from equality and
+    /// hashing (see the manual impls below) so the exact `bogus` set and the
+    /// calibration guard's distinct-signature test keep their numeric-only
+    /// semantics and don't shift when bodies vary by a token.
+    pub simhash: u64,
+}
+
+// Equality/hash cover the numeric shape only — NOT `simhash`. Two responses with
+// the same shape are "the same signature" for the exact filter and the distinct-
+// signature catch-all guard regardless of body hash; the body hash is a separate,
+// fuzzy signal applied by `shape_close_to`.
+impl PartialEq for Signature {
+    fn eq(&self, o: &Self) -> bool {
+        self.status == o.status
+            && self.len_bucket == o.len_bucket
+            && self.words == o.words
+            && self.lines == o.lines
+            && self.loc == o.loc
+    }
+}
+impl Eq for Signature {}
+impl std::hash::Hash for Signature {
+    fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
+        self.status.hash(h);
+        self.len_bucket.hash(h);
+        self.words.hash(h);
+        self.lines.hash(h);
+        self.loc.hash(h);
+    }
 }
 
 impl Signature {
@@ -80,7 +111,14 @@ impl Signature {
             words,
             lines,
             loc: 0,
+            simhash: 0,
         }
+    }
+
+    /// Fold a body SimHash into the signature (Layer 2b). `0` leaves it absent.
+    pub fn with_simhash(mut self, simhash: u64) -> Self {
+        self.simhash = simhash;
+        self
     }
 
     /// Fold a redirect `Location` into the signature. Only meaningful for 3xx
@@ -115,11 +153,28 @@ impl Signature {
 /// in a canonical tag) that pushes each response just outside an exact bucket.
 const SHAPE_REL_TOL: f64 = 0.10;
 
+/// Max SimHash Hamming distance for two bodies to count as the same template
+/// (Layer 2b). A SPA "shell" served for every path differs by only the few tokens
+/// that vary per path (an echoed path, a nonce), so near-duplicate bodies sit a
+/// handful of bits apart, while a genuinely different page is tens of bits away —
+/// this threshold separates the two and, unlike the size band, is independent of
+/// how much the body's *length* varies.
+const SIMHASH_HAMMING_TOL: u32 = 6;
+
 impl Signature {
-    /// Whether this (body) response's numeric shape is within [`SHAPE_REL_TOL`] of
-    /// `other`'s on all of length/words/lines. Only meaningful for non-redirects
-    /// (both `loc == 0`); redirects are matched exactly via the `loc` hash.
+    /// Whether this (body) response matches `other`'s template. Only meaningful
+    /// for non-redirects (both `loc == 0`); redirects are matched exactly via the
+    /// `loc` hash. When a body SimHash is present on both (Layer 2b), it is the
+    /// decisive, size-independent signal — a template match regardless of how the
+    /// body length varies per path. Otherwise (no body hash, e.g. the NDJSON
+    /// stream) it falls back to the [`SHAPE_REL_TOL`] length/word/line band.
     fn shape_close_to(&self, other: &Signature) -> bool {
+        if self.status != other.status || self.loc != 0 || other.loc != 0 {
+            return false;
+        }
+        if self.simhash != 0 && other.simhash != 0 {
+            return hamming(self.simhash, other.simhash) <= SIMHASH_HAMMING_TOL;
+        }
         fn within(a: u64, b: u64) -> bool {
             let (a, b) = (a as f64, b as f64);
             let m = a.max(b);
@@ -128,10 +183,7 @@ impl Signature {
             }
             (a - b).abs() / m <= SHAPE_REL_TOL
         }
-        self.status == other.status
-            && self.loc == 0
-            && other.loc == 0
-            && within(self.len_bucket, other.len_bucket)
+        within(self.len_bucket, other.len_bucket)
             && within(self.words, other.words)
             && within(self.lines, other.lines)
     }
@@ -172,10 +224,20 @@ impl SoftNotFoundFilter {
         }
     }
 
-    /// True if a response looks like a learned soft-404/template — by exact
-    /// signature, or (for body responses) within [`SHAPE_REL_TOL`] of a learned
-    /// bogus shape.
+    /// True if a response looks like a learned soft-404/template.
+    ///
+    /// * **Body response** (a SimHash is present): decided purely by template
+    ///   similarity against the learned body shapes (Layer 2b). This both *matches*
+    ///   a shell served at wildly varying sizes (recall) and *spares* a real page
+    ///   that merely shares a soft-404's coarse size but whose content is far in
+    ///   token space (precision) — the coarse size bucket never filters a body on
+    ///   its own.
+    /// * **No body** (redirect, or the NDJSON stream with only counts): exact
+    ///   signature, or the [`SHAPE_REL_TOL`] size band (Layer 2).
     pub fn is_soft_not_found(&self, sig: &Signature) -> bool {
+        if sig.simhash != 0 {
+            return self.shapes.iter().any(|b| sig.shape_close_to(b));
+        }
         if self.bogus.contains(sig) {
             return true;
         }
@@ -280,5 +342,35 @@ mod tests {
         // fuzzy layer must never fire — real findings are never suppressed.
         let f = SoftNotFoundFilter::new();
         assert!(!f.is_soft_not_found(&Signature::new(200, 52_000, 4_000, 800)));
+    }
+
+    #[test]
+    fn simhash_body_match_is_size_independent() {
+        // A realistic SPA shell: a large body of shared markup/script tokens, with
+        // only the echoed path differing per request (one token).
+        let shared: String = (0..400).map(|i| format!("tok{i} ")).collect();
+        let shell = |p: &str| format!("{shared} data path {p} end");
+        let mut f = SoftNotFoundFilter::new();
+        // learned from a random probe (small length column here)...
+        f.learn_bogus(Signature::new(200, 500, 40, 1).with_simhash(simhash(&shell("zzabsentx"))));
+
+        // ...a real path returns the SAME template with a FAR larger length
+        // (outside the 10% size band). SimHash still matches -> filtered. This is
+        // exactly the case size-clustering (Layer 2) misses.
+        assert!(
+            f.is_soft_not_found(
+                &Signature::new(200, 90_000, 9_000, 1).with_simhash(simhash(&shell("admin")))
+            ),
+            "same template at a very different size must match via SimHash"
+        );
+
+        // A genuinely different page of the SAME size as the learned shell is an
+        // outlier in token space -> survives. Size clustering could NOT tell these
+        // apart; SimHash can.
+        let real: String = (0..400).map(|i| format!("report{i} ")).collect();
+        assert!(
+            !f.is_soft_not_found(&Signature::new(200, 500, 40, 1).with_simhash(simhash(&real))),
+            "a different page of the same size must survive"
+        );
     }
 }

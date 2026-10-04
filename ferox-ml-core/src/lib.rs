@@ -79,6 +79,10 @@ pub struct ProbeResp {
     pub content_length: u64,
     pub word_count: u64,
     pub line_count: u64,
+    /// 64-bit SimHash of the response body, or 0 when the caller has no body
+    /// (e.g. an NDJSON record). Folded into [`signature`](Self::signature) so the
+    /// soft-404 filter's body-template match (Layer 2b) can run.
+    pub body_simhash: u64,
 }
 
 impl ProbeResp {
@@ -112,7 +116,7 @@ impl ProbeResp {
         if (300..400).contains(&self.status) {
             sig.with_location(self.header("location"))
         } else {
-            sig
+            sig.with_simhash(self.body_simhash)
         }
     }
 }

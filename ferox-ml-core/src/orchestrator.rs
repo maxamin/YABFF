@@ -23,6 +23,7 @@ fn to_probe_views(resps: &[FeroxResponse]) -> Vec<crate::ProbeResp> {
             content_length: r.content_length,
             word_count: r.word_count,
             line_count: r.line_count,
+            body_simhash: r.body_simhash,
         })
         .collect()
 }
@@ -870,7 +871,9 @@ fn signature_of(r: &FeroxResponse) -> Signature {
     if (300..400).contains(&r.status) {
         sig.with_location(r.header("location"))
     } else {
-        sig
+        // A body response carries its SimHash (when the runner computed one) so the
+        // filter can match 200-shell catch-alls by template regardless of size.
+        sig.with_simhash(r.body_simhash)
     }
 }
 

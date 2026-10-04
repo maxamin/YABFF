@@ -333,6 +333,11 @@ async fn wrapped_main(config: Arc<Configuration>) -> Result<()> {
                                 }
                             }
                             let body = resp.text().await.unwrap_or_default();
+                            let body_simhash = if body.is_empty() {
+                                0
+                            } else {
+                                ferox_ml_core::dedup::simhash(&body)
+                            };
                             feroxbuster::ml::ProbeResp {
                                 url,
                                 status,
@@ -340,6 +345,7 @@ async fn wrapped_main(config: Arc<Configuration>) -> Result<()> {
                                 content_length: body.len() as u64,
                                 word_count: body.split_whitespace().count() as u64,
                                 line_count: body.lines().count() as u64,
+                                body_simhash,
                             }
                         }
                         Err(_) => feroxbuster::ml::ProbeResp {
@@ -869,6 +875,15 @@ impl ferox_ml_core::ferox::FeroxRunner for InProcessRunner {
                             }
                         }
                         let body = resp.text().await.unwrap_or_default();
+                        // SimHash of the body feeds the soft-404 body-template match
+                        // (Layer 2b): a 200-shell catch-all is caught by template
+                        // similarity even when its length varies per path. 0 for an
+                        // empty body (falls back to the size/exact signature).
+                        let body_simhash = if body.is_empty() {
+                            0
+                        } else {
+                            ferox_ml_core::dedup::simhash(&body)
+                        };
                         let path = url::Url::parse(&u)
                             .map(|x| x.path().to_string())
                             .unwrap_or_default();
@@ -880,6 +895,7 @@ impl ferox_ml_core::ferox::FeroxRunner for InProcessRunner {
                             word_count: body.split_whitespace().count() as u64,
                             line_count: body.lines().count() as u64,
                             headers,
+                            body_simhash,
                         })
                     }
                 })
