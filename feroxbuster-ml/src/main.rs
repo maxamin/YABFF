@@ -1013,7 +1013,7 @@ fn ml_output_line(url: &str, status: u16, json: bool) -> String {
 /// bounded-scan feedback loop) against the target, in-process via
 /// [`InProcessRunner`] — the same runner-agnostic `Campaign` both tools share,
 /// now with no subprocess at all.
-fn run_ml_loop(config: &Configuration) -> Result<()> {
+fn run_ml_loop(config: &Arc<Configuration>) -> Result<()> {
     use ferox_ml_core::config::Config as MlConfig;
     use ferox_ml_core::orchestrator::Campaign;
     use std::{cell::RefCell, io::Write, rc::Rc};
@@ -1040,6 +1040,20 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
         .collect();
     if targets.is_empty() {
         anyhow::bail!("--ml-loop requires at least one target (-u/--url, or a list via --stdin)");
+    }
+
+    // Print the standard feroxbuster banner. The --ml-loop path returns from main()
+    // before wrapped_main() (where the normal scan prints it), so without this the
+    // loop would start with no banner at all. Gated on OutputLevel::Default, same as
+    // the normal path (no banner under --quiet/--silent). The update check is skipped
+    // here: it's async and needs Handles/a runtime, neither of which this sync
+    // in-process path has set up yet, so the banner just omits the "new version"
+    // line. Banner goes to stderr so it never contaminates --output or a piped stdout.
+    if matches!(config.output_level, OutputLevel::Default) {
+        let banner = Banner::new(&targets, config);
+        if banner.print_to(stderr(), config.clone()).is_err() {
+            log::warn!("ml-loop: could not print banner");
+        }
     }
 
     let mut cfg = MlConfig {
@@ -1137,6 +1151,13 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
     };
 
     let multi = targets.len() > 1;
+    // Live progress spinner for the ml-loop path (same OutputLevel gate as the
+    // banner: off under --quiet/--silent). It draws to STDERR, not stdout: this
+    // path reserves stdout for the machine-readable summary and (absent --output)
+    // the discoveries, whereas feroxbuster's normal bar owns stdout. indicatif's
+    // stderr target auto-hides when stderr isn't a TTY, so piping (e.g. under
+    // proxychains, or 2>file) degrades to no bar rather than control-code noise.
+    let show_progress = matches!(config.output_level, OutputLevel::Default);
     let mut scanned = 0usize;
     let mut total_found = 0usize;
     for (i, target) in targets.iter().enumerate() {
@@ -1174,7 +1195,45 @@ fn run_ml_loop(config: &Configuration) -> Result<()> {
                 }
             });
         }
-        match campaign.run(target) {
+
+        // Per-target spinner: an indeterminate bar (the ml-loop has no fixed total
+        // — in list mode the directory tree, and thus the work, grows as dirs are
+        // found), updated every round with rounds/requests/found/dirs so a long
+        // scan is visibly alive. Cloned into the hook (ProgressBar is an Arc inside);
+        // the outer handle is cleared the instant run() returns, before the summary.
+        let pb = if show_progress {
+            let pb = indicatif::ProgressBar::with_draw_target(
+                None,
+                indicatif::ProgressDrawTarget::stderr(),
+            );
+            // with_template only errors on a malformed template literal; this one is
+            // a tested constant, so unwrap can't fire at runtime.
+            pb.set_style(
+                indicatif::ProgressStyle::with_template("{spinner:.green} [ml-loop] {msg}")
+                    .unwrap(),
+            );
+            pb.enable_steady_tick(std::time::Duration::from_millis(120));
+            pb.set_message(format!("{target}  starting…"));
+            let pb_hook = pb.clone();
+            let tgt = target.clone();
+            campaign = campaign.with_on_progress(move |p| {
+                pb_hook.set_message(format!(
+                    "{tgt}  rounds={} requests={} found={} dirs={}",
+                    p.rounds, p.requests, p.found, p.arms
+                ));
+            });
+            Some(pb)
+        } else {
+            None
+        };
+
+        let result = campaign.run(target);
+        // Clear the spinner before any summary/error goes to stdout/stderr, so the
+        // two never interleave.
+        if let Some(pb) = pb {
+            pb.finish_and_clear();
+        }
+        match result {
             Ok(summary) => {
                 scanned += 1;
                 total_found += summary.discovered.len();

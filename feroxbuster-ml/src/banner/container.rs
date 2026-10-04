@@ -382,7 +382,13 @@ impl Banner {
         let threads = BannerEntry::new("🚀", "Threads", &config.threads.to_string());
         let limit_bars =
             BannerEntry::new("📊", "Limit Dir Scan Bars", &config.limit_bars.to_string());
-        let wordlist_display = if config.wordlist.len() == 1 {
+        let wordlist_display = if config.ml_loop && !config.ml_list_dir.is_empty() {
+            // --ml-loop scans from the ML list (a file or recursive dir given via
+            // --ml-list), re-applied per discovered directory. config.wordlist here
+            // holds only the inert ferox-config default (-w is ignored in list
+            // mode), so show the list that's actually driving the scan.
+            config.ml_list_dir.clone()
+        } else if config.wordlist.len() == 1 {
             config.wordlist[0].clone()
         } else {
             format!("[{}]", config.wordlist.join(", "))
@@ -538,15 +544,27 @@ by Ben "epi" Risher {}                 ver: {}"#,
     }
 
     /// get a fancy footer for the banner
-    fn footer(&self) -> String {
+    ///
+    /// `ml_loop` swaps the interactive-menu line for a Ctrl-C hint: the --ml-loop
+    /// path has no Scan Management Menu (it returns from main() before the menu's
+    /// input handler is installed), so Ctrl-C — which the orchestrator traps to
+    /// save the model and stop cleanly — is the only control it offers.
+    fn footer(&self, ml_loop: bool) -> String {
         let addl_section = "──────────────────────────────────────────────────";
         let bottom = "───────────────────────────┴──────────────────────";
 
-        let instructions = format!(
-            " 🏁  Press [{}] to use the {}™",
-            style("ENTER").yellow(),
-            style("Scan Management Menu").bright().yellow(),
-        );
+        let instructions = if ml_loop {
+            format!(
+                " 🏁  Press [{}] to stop the scan (model saved)",
+                style("CTRL+C").yellow(),
+            )
+        } else {
+            format!(
+                " 🏁  Press [{}] to use the {}™",
+                style("ENTER").yellow(),
+                style("Scan Management Menu").bright().yellow(),
+            )
+        };
 
         format!("{bottom}\n{instructions}\n{addl_section}")
     }
@@ -852,7 +870,7 @@ by Ben "epi" Risher {}                 ver: {}"#,
             writeln!(&mut writer, "{update}")?;
         }
 
-        writeln!(&mut writer, "{}", self.footer())?;
+        writeln!(&mut writer, "{}", self.footer(config.ml_loop))?;
 
         Ok(())
     }
