@@ -24,8 +24,11 @@ const RATE_LIMIT_RATIO: f64 = HIGH_ERROR_RATIO / 3.0;
 
 /// How many consecutive enforcement intervals the *same* trigger must survive
 /// (across feroxbuster's cooldowns) before a transient throttle is reclassified
-/// as a ban.
-const SUSTAINED_INTERVALS: u32 = 3;
+/// as a ban. A 403 wall or a mid-scan block page still bans immediately; this
+/// only governs the slow escalation of a mild/transient trigger (429s, a
+/// transport-error ratio), so a host has to misbehave for this many rounds
+/// running before AutoBail abandons it.
+const SUSTAINED_INTERVALS: u32 = 10;
 
 /// Where a target sits on the transient→ban spectrum.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
@@ -656,19 +659,15 @@ mod tests {
     fn persistent_mild_trigger_escalates_to_ban() {
         let mut d = WafBanDetector::new(RequesterPolicy::AutoTune);
         let sig = BanSignals::new(100, 10, 0, 30); // sub-wall, mild
-        // first two intervals: still throttled
-        assert_eq!(
-            d.classify(&sig, Some(PolicyTrigger::Errors)).state,
-            BanState::Throttled
-        );
-        assert_eq!(
-            d.classify(&sig, Some(PolicyTrigger::Errors)).state,
-            BanState::Throttled
-        );
-        // third consecutive identical trigger => sustained => Banned
+        // the first SUSTAINED_INTERVALS-1 intervals stay throttled...
+        for i in 1..SUSTAINED_INTERVALS {
+            let v = d.classify(&sig, Some(PolicyTrigger::Errors));
+            assert_eq!(v.state, BanState::Throttled, "interval {i} should still throttle");
+        }
+        // ...and the SUSTAINED_INTERVALS-th consecutive identical trigger bans.
         let v = d.classify(&sig, Some(PolicyTrigger::Errors));
         assert_eq!(v.state, BanState::Banned);
-        assert_eq!(v.persisted_intervals, 3);
+        assert_eq!(v.persisted_intervals, SUSTAINED_INTERVALS);
         assert!(v.evidence.iter().any(|e| e.contains("persisted")));
     }
 
