@@ -85,9 +85,22 @@ impl Signature {
 
     /// Fold a redirect `Location` into the signature. Only meaningful for 3xx
     /// (callers pass `None` otherwise); `None` or an empty value leaves `loc` 0.
+    ///
+    /// The `Location` is keyed on its **path only** — the volatile tail (query
+    /// string `?…` and matrix/session params `;jsessionid=…`) is stripped before
+    /// hashing. A catch-all auth wall redirects every path to the *same* target
+    /// but echoes the original path (or a per-request session id) in that tail, so
+    /// without stripping it every redirect gets a unique `loc` and the soft-404
+    /// filter can never generalize — the runaway that floods list-mode output on
+    /// such hosts. Keying on the path collapses them to one signature the filter
+    /// catches, while a genuine self-redirect (`/admin` → `/admin/`) keeps a
+    /// distinct path and still survives.
     pub fn with_location(mut self, location: Option<&str>) -> Self {
         self.loc = match location {
-            Some(l) if !l.is_empty() => fnv1a64(l.as_bytes()),
+            Some(l) if !l.is_empty() => {
+                let path = l.split(['?', ';']).next().unwrap_or(l);
+                fnv1a64(path.as_bytes())
+            }
             _ => 0,
         };
         self
@@ -160,5 +173,32 @@ mod tests {
 
         // No Location (loc = 0) is distinct from a located redirect.
         assert!(!f.is_soft_not_found(&Signature::new(301, 17, 2, 0)));
+    }
+
+    #[test]
+    fn path_echoing_catch_all_redirect_collapses_to_one_signature() {
+        // An auth wall 302s every path to the SAME login, echoing the requested
+        // path (and a per-request session id) in the volatile tail. Learned from
+        // one random calibration probe, every other such redirect must be filtered
+        // — otherwise the whole wordlist is recorded (the observed runaway).
+        let learn = |loc: &str| Signature::new(302, 0, 0, 0).with_location(Some(loc));
+        let mut f = SoftNotFoundFilter::new();
+        f.learn_bogus(learn("https://h.test/login;jsessionid=AAAAAAAA"));
+
+        for loc in [
+            "https://h.test/login;jsessionid=BBBBBBBB",      // different session id
+            "https://h.test/login?returnUrl=/admin",          // query echoes the path
+            "https://h.test/login?returnUrl=/wp-admin&x=1",   // different echoed path
+            "https://h.test/login;jsessionid=CC?next=/secret",// both tails
+        ] {
+            assert!(
+                f.is_soft_not_found(&learn(loc)),
+                "catch-all redirect must collapse to the learned signature: {loc}"
+            );
+        }
+
+        // A genuine self-redirect to a DIFFERENT path (no volatile tail) still has
+        // a distinct Location path, so it survives the filter.
+        assert!(!f.is_soft_not_found(&learn("https://h.test/admin/")));
     }
 }
