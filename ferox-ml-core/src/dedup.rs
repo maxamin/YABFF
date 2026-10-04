@@ -107,10 +107,53 @@ impl Signature {
     }
 }
 
+/// Relative tolerance for the fuzzy body-shape match (Layer 2). A response whose
+/// bucketed length, word count and line count are all within this fraction of a
+/// learned bogus shape is treated as the same template. Small enough that
+/// genuinely different pages don't collide, large enough to absorb the per-path
+/// jitter of a 200 "shell" catch-all (a CSP nonce, a build hash, the echoed path
+/// in a canonical tag) that pushes each response just outside an exact bucket.
+const SHAPE_REL_TOL: f64 = 0.10;
+
+impl Signature {
+    /// Whether this (body) response's numeric shape is within [`SHAPE_REL_TOL`] of
+    /// `other`'s on all of length/words/lines. Only meaningful for non-redirects
+    /// (both `loc == 0`); redirects are matched exactly via the `loc` hash.
+    fn shape_close_to(&self, other: &Signature) -> bool {
+        fn within(a: u64, b: u64) -> bool {
+            let (a, b) = (a as f64, b as f64);
+            let m = a.max(b);
+            if m == 0.0 {
+                return true; // both empty
+            }
+            (a - b).abs() / m <= SHAPE_REL_TOL
+        }
+        self.status == other.status
+            && self.loc == 0
+            && other.loc == 0
+            && within(self.len_bucket, other.len_bucket)
+            && within(self.words, other.words)
+            && within(self.lines, other.lines)
+    }
+}
+
 /// Learns bogus signatures from known-negative probes, then flags matches.
+///
+/// Two layers. **Exact** (`bogus`) catches identical templates and — since a
+/// redirect's `loc` now keys on the Location path — path-echoing 302 catch-alls.
+/// **Fuzzy** (`shapes`) catches a *200 "shell" catch-all*: a host that answers
+/// every path with the same page whose body varies just enough per path
+/// (nonce/build-hash/echoed path) to dodge an exact signature, so each response
+/// would otherwise be recorded. The fuzzy layer only ever contains shapes learned
+/// from the random calibration probes, so it is **inert on a normal host** (where
+/// those probes 404 and nothing is learned) — it suppresses a catch-all's template
+/// without risking real findings on clean targets, and a response that is an
+/// outlier from every learned shape still survives.
 #[derive(Default)]
 pub struct SoftNotFoundFilter {
     bogus: HashSet<Signature>,
+    /// Body shapes (loc == 0) learned from bogus probes, for the fuzzy match.
+    shapes: Vec<Signature>,
 }
 
 impl SoftNotFoundFilter {
@@ -122,11 +165,21 @@ impl SoftNotFoundFilter {
     /// random, almost-certainly-absent probe path).
     pub fn learn_bogus(&mut self, sig: Signature) {
         self.bogus.insert(sig);
+        // Only body responses feed the fuzzy layer; redirects (loc != 0) are keyed
+        // exactly by their path-normalized Location.
+        if sig.loc == 0 {
+            self.shapes.push(sig);
+        }
     }
 
-    /// True if a response looks like a learned soft-404/template.
+    /// True if a response looks like a learned soft-404/template — by exact
+    /// signature, or (for body responses) within [`SHAPE_REL_TOL`] of a learned
+    /// bogus shape.
     pub fn is_soft_not_found(&self, sig: &Signature) -> bool {
-        self.bogus.contains(sig)
+        if self.bogus.contains(sig) {
+            return true;
+        }
+        sig.loc == 0 && self.shapes.iter().any(|b| sig.shape_close_to(b))
     }
 }
 
@@ -200,5 +253,32 @@ mod tests {
         // A genuine self-redirect to a DIFFERENT path (no volatile tail) still has
         // a distinct Location path, so it survives the filter.
         assert!(!f.is_soft_not_found(&learn("https://h.test/admin/")));
+    }
+
+    #[test]
+    fn fuzzy_shape_catches_200_shell_catch_all_but_keeps_outliers() {
+        // A 200 "shell" host returns ~the same large page for every path, varying
+        // a few % per path (nonce / echoed path) so exact signatures differ.
+        // Learned from one random probe, near-identical shells must be filtered;
+        // a genuinely different page (a real finding) must survive.
+        let mut f = SoftNotFoundFilter::new();
+        f.learn_bogus(Signature::new(200, 52_000, 4_000, 800)); // the shell
+
+        // within SHAPE_REL_TOL on all axes -> same template -> filtered
+        assert!(f.is_soft_not_found(&Signature::new(200, 53_500, 4_050, 806)));
+        assert!(f.is_soft_not_found(&Signature::new(200, 50_200, 3_900, 790)));
+
+        // a real, clearly different page is an outlier on every axis -> survives
+        assert!(!f.is_soft_not_found(&Signature::new(200, 1_200, 90, 18)));
+        // same size but a different status is not the shell
+        assert!(!f.is_soft_not_found(&Signature::new(403, 52_000, 4_000, 800)));
+    }
+
+    #[test]
+    fn fuzzy_layer_is_inert_until_a_bogus_is_learned() {
+        // On a clean host the random probes 404 and nothing is learned, so the
+        // fuzzy layer must never fire — real findings are never suppressed.
+        let f = SoftNotFoundFilter::new();
+        assert!(!f.is_soft_not_found(&Signature::new(200, 52_000, 4_000, 800)));
     }
 }
