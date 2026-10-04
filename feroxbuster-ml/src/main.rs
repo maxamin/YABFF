@@ -4,7 +4,7 @@ use std::{
         consts::{ARCH, OS},
     },
     fs::{create_dir, remove_file, File},
-    io::{stderr, BufRead, BufReader},
+    io::{stderr, BufRead, BufReader, IsTerminal},
     ops::Index,
     path::Path,
     process::{exit, Command, Stdio},
@@ -1154,10 +1154,15 @@ fn run_ml_loop(config: &Arc<Configuration>) -> Result<()> {
     // Live progress spinner for the ml-loop path (same OutputLevel gate as the
     // banner: off under --quiet/--silent). It draws to STDERR, not stdout: this
     // path reserves stdout for the machine-readable summary and (absent --output)
-    // the discoveries, whereas feroxbuster's normal bar owns stdout. indicatif's
-    // stderr target auto-hides when stderr isn't a TTY, so piping (e.g. under
-    // proxychains, or 2>file) degrades to no bar rather than control-code noise.
-    let show_progress = matches!(config.output_level, OutputLevel::Default);
+    // the discoveries, whereas feroxbuster's normal bar owns stdout.
+    //
+    // Only when stderr is a real TTY. The spinner hook suppresses the
+    // orchestrator's periodic `[ml-loop] rounds=…` text lines (so the two don't
+    // garble each other), but a piped/`2>log` run — how a workflow captures output
+    // and how watch_ml_loop.sh follows progress — can't show a spinner anyway. So
+    // off a terminal we attach no hook and fall back to those greppable text lines.
+    let show_progress =
+        matches!(config.output_level, OutputLevel::Default) && std::io::stderr().is_terminal();
     let mut scanned = 0usize;
     let mut total_found = 0usize;
     for (i, target) in targets.iter().enumerate() {
